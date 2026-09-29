@@ -1,0 +1,57 @@
+# Full containerized stack (Postgres + backend + frontend) for a real
+# deployment target — e.g. a Raspberry Pi. See DEPLOY.md for step-by-step
+# setup. This is separate from the root docker-compose.yml, which is
+# Postgres-only and meant for local development (backend/frontend run
+# directly on your machine there).
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-scioly}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-scioly_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-scioly}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      # Bind mount, not a named volume — this is a real path on the host
+      # (ideally an external/USB drive on the Pi, not the SD card), so the
+      # database survives `docker compose down -v`, container recreation,
+      # and is trivially backed up by just copying this directory.
+      - ${POSTGRES_DATA_DIR:?Set POSTGRES_DATA_DIR in .env to a real host path}:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-scioly} -d ${POSTGRES_DB:-scioly}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-scioly}:${POSTGRES_PASSWORD:-scioly_dev_password}@postgres:5432/${POSTGRES_DB:-scioly}
+      CORS_ORIGINS: ${CORS_ORIGINS:?Set CORS_ORIGINS in .env, e.g. http://<pi-ip>:3000}
+      ENV: production
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Baked into the browser bundle at build time — must be reachable
+        # from a browser on your network, e.g. http://<pi-ip>:8000.
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:?Set NEXT_PUBLIC_API_BASE_URL in .env, e.g. http://<pi-ip>:8000}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      # Container-to-container traffic (Server Component fetches) — uses
+      # the Docker-internal service name, not the public address above.
+      BACKEND_INTERNAL_URL: http://backend:8000
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
