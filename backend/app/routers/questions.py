@@ -74,3 +74,31 @@ def update_question(
 
     question = questions_crud.update_question(db, question, data)
     return _to_question_read(question)
+
+
+@router.post("/{paper_id}/questions/confirm-all", response_model=list[QuestionRead])
+def confirm_all_questions(
+    paper_id: uuid.UUID, db: Session = Depends(get_db)
+) -> list[QuestionRead]:
+    """Bulk-accept every question's current server-side state as reviewed
+    — lets a parent skip clicking "Save & confirm" on each question
+    individually when the parsed data already looks right."""
+    paper = papers_crud.get_paper_by_id(db, paper_id)
+    if paper is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Question paper not found."
+        )
+
+    missing = questions_crud.list_mcq_question_numbers_missing_correct_answer(
+        db, paper_id
+    )
+    if missing:
+        numbers = ", ".join(str(n) for n in missing)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Question(s) {numbers} need a correct answer marked before confirming.",
+        )
+
+    questions_crud.confirm_all_questions(db, paper_id)
+    questions = questions_crud.list_questions_for_paper(db, paper_id)
+    return [_to_question_read(question) for question in questions]

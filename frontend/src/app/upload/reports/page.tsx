@@ -1,5 +1,13 @@
 import Link from "next/link";
-import { ClipboardList, Minus, TrendingDown, TrendingUp, TriangleAlert, Users } from "lucide-react";
+import {
+  Clock,
+  ClipboardList,
+  Minus,
+  TrendingDown,
+  TrendingUp,
+  TriangleAlert,
+  Users,
+} from "lucide-react";
 
 import {
   Card,
@@ -12,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { getErrorMessage } from "@/lib/api/client";
 import { getAttemptReports, getStudentOverviews } from "@/lib/api/reports";
 import type { AttemptPoint, StudentOverview, StudentPaperReport } from "@/lib/api/types";
+import { formatDuration } from "@/lib/utils";
 import { TrendChart } from "./TrendChart";
 
 function formatDate(value: string | null): string {
@@ -204,12 +213,24 @@ export default async function ReportsPage() {
                           {report.attempts.length >= 2 ? (
                             <>
                               <TrendChart attempts={report.attempts} />
-                              <DeltaIndicator attempts={report.attempts} />
+                              <div className="flex items-center justify-between gap-2">
+                                <DeltaIndicator attempts={report.attempts} />
+                                {formatDuration(latest.started_at, latest.submitted_at) ? (
+                                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                    <Clock className="size-3.5" />
+                                    {formatDuration(latest.started_at, latest.submitted_at)}
+                                  </span>
+                                ) : null}
+                              </div>
                             </>
                           ) : (
                             <p className="text-sm text-muted-foreground">
                               Scored {latest.percent ?? 0}% ({latest.score ?? 0}/
-                              {latest.max_score ?? 0} pts) — retake to see a trend here.
+                              {latest.max_score ?? 0} pts)
+                              {formatDuration(latest.started_at, latest.submitted_at)
+                                ? ` in ${formatDuration(latest.started_at, latest.submitted_at)}`
+                                : ""}{" "}
+                              — retake to see a trend here.
                             </p>
                           )}
                         </CardContent>

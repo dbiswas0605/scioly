@@ -38,6 +38,18 @@ def list_attempts_for_paper(
     return list(db.scalars(stmt))
 
 
+def list_attempts_for_student(db: Session, student_id: uuid.UUID) -> list[ExamAttempt]:
+    """All of one student's attempts across every paper — used to decorate
+    the Practice subject/paper tiles with "already taken" + score."""
+    return list(
+        db.scalars(
+            select(ExamAttempt)
+            .where(ExamAttempt.student_id == student_id)
+            .order_by(ExamAttempt.paper_id, ExamAttempt.attempt_number)
+        )
+    )
+
+
 def create_attempt(
     db: Session,
     *,

@@ -9,21 +9,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { getErrorMessage } from "@/lib/api/client";
-import { getLlmProviders } from "@/lib/api/admin";
+import { getAppSettings, getLlmProviders } from "@/lib/api/admin";
 import { getPapers } from "@/lib/api/papers";
 import { getSubjects } from "@/lib/api/subjects";
-import type { LlmProvider, QuestionPaper } from "@/lib/api/types";
+import type { AppSetting, LlmProvider, QuestionPaper } from "@/lib/api/types";
 import { AdminPapers } from "./AdminPapers";
 import { LlmSettings } from "./LlmSettings";
-
-const PLACEHOLDER_SECTIONS = [
-  {
-    title: "Timers",
-    description:
-      "Configure the default countdown timer for each exam paper.",
-    icon: Timer,
-  },
-];
+import { TimerSettings } from "./TimerSettings";
 
 export default async function AdminPage() {
   let subjectCount: number | null = null;
@@ -31,6 +23,8 @@ export default async function AdminPage() {
   let providersError: string | null = null;
   let papers: QuestionPaper[] = [];
   let papersError: string | null = null;
+  let settings: AppSetting[] = [];
+  let settingsError: string | null = null;
 
   try {
     const subjects = await getSubjects();
@@ -51,6 +45,12 @@ export default async function AdminPage() {
     papers = await getPapers();
   } catch (error) {
     papersError = getErrorMessage(error, "Could not reach the server — is the backend running?");
+  }
+
+  try {
+    settings = await getAppSettings();
+  } catch (error) {
+    settingsError = getErrorMessage(error, "Could not reach the server — is the backend running?");
   }
 
   return (
@@ -117,25 +117,28 @@ export default async function AdminPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        {PLACEHOLDER_SECTIONS.map((section) => {
-          const Icon = section.icon;
-          return (
-            <Card key={section.title}>
-              <CardHeader className="gap-3">
-                <div className="flex items-center justify-between">
-                  <span className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                    <Icon className="size-4.5" />
-                  </span>
-                  <Badge variant="secondary">Coming soon</Badge>
-                </div>
-                <CardTitle className="text-lg">{section.title}</CardTitle>
-                <CardDescription>{section.description}</CardDescription>
-              </CardHeader>
-            </Card>
-          );
-        })}
-      </div>
+      <Card>
+        <CardHeader className="gap-3">
+          <div className="flex items-center justify-between">
+            <span className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Timer className="size-4.5" />
+            </span>
+          </div>
+          <CardTitle className="text-lg">Timers</CardTitle>
+          <CardDescription>
+            Set the default countdown timer applied to new exam papers.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {settingsError ? (
+            <p className="text-sm text-destructive">{settingsError}</p>
+          ) : (
+            <TimerSettings
+              setting={settings.find((s) => s.key === "default_exam_duration_minutes")}
+            />
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

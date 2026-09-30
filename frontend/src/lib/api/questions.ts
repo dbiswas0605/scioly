@@ -17,3 +17,9 @@ export function updateQuestion(
     body: JSON.stringify(data),
   });
 }
+
+export function confirmAllQuestions(paperId: string): Promise<Question[]> {
+  return apiFetch<Question[]>(`/api/papers/${paperId}/questions/confirm-all`, {
+    method: "POST",
+  });
+}

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, Loader2, Sparkles, TriangleAlert } from "lucide-react";
+import { CheckCheck, CheckCircle2, Loader2, Sparkles, TriangleAlert } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/card";
 import { getErrorMessage } from "@/lib/api/client";
 import { parsePaper, publishPaper } from "@/lib/api/papers";
-import { getQuestions } from "@/lib/api/questions";
+import { confirmAllQuestions, getQuestions } from "@/lib/api/questions";
 import type { Question, QuestionPaper } from "@/lib/api/types";
 import { QuestionCard } from "./QuestionCard";
 
@@ -37,6 +37,7 @@ export function PaperReview({
   const [paper, setPaper] = useState(initialPaper);
   const [questions, setQuestions] = useState(initialQuestions);
   const [parsing, setParsing] = useState(false);
+  const [confirmingAll, setConfirmingAll] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -56,6 +57,19 @@ export function PaperReview({
       setActionError(getErrorMessage(error, "Could not reach the server."));
     } finally {
       setParsing(false);
+    }
+  }
+
+  async function handleConfirmAll() {
+    setConfirmingAll(true);
+    setActionError(null);
+    try {
+      const updatedQuestions = await confirmAllQuestions(paper.id);
+      setQuestions(updatedQuestions);
+    } catch (error) {
+      setActionError(getErrorMessage(error, "Could not confirm all questions."));
+    } finally {
+      setConfirmingAll(false);
     }
   }
 
@@ -156,6 +170,20 @@ export function PaperReview({
                   <Sparkles className="size-4" />
                 )}
                 Re-parse with AI
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleConfirmAll}
+                disabled={confirmingAll || unreviewedCount === 0}
+                className="gap-2"
+              >
+                {confirmingAll ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <CheckCheck className="size-4" />
+                )}
+                Save & Confirm All
               </Button>
               <Button
                 size="sm"

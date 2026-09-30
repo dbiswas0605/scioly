@@ -2,7 +2,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FileStack, TriangleAlert } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardDescription,
@@ -12,6 +11,7 @@ import {
 import { getErrorMessage } from "@/lib/api/client";
 import { getPapers } from "@/lib/api/papers";
 import { getSubjects } from "@/lib/api/subjects";
+import { SubjectPapersGrid } from "./SubjectPapersGrid";
 
 export default async function SubjectPapersPage({
   params,
@@ -78,29 +78,7 @@ export default async function SubjectPapersPage({
           </CardHeader>
         </Card>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {publishedPapers.map((paper) => (
-            <Link key={paper.id} href={`/practice/papers/${paper.id}`}>
-              <Card className="h-full transition-all hover:-translate-y-0.5 hover:shadow-md">
-                <CardHeader className="gap-2">
-                  <div className="flex items-center justify-between">
-                    <span className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                      <FileStack className="size-4.5" />
-                    </span>
-                    <Badge variant="outline">
-                      {paper.default_duration_minutes} min
-                    </Badge>
-                  </div>
-                  <CardTitle className="text-lg">{paper.title}</CardTitle>
-                  <CardDescription>
-                    {paper.total_questions} question
-                    {paper.total_questions === 1 ? "" : "s"}
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-            </Link>
-          ))}
-        </div>
+        <SubjectPapersGrid papers={publishedPapers} />
       )}
     </div>
   );

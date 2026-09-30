@@ -1,4 +1,5 @@
 import type { AttemptPoint } from "@/lib/api/types";
+import { formatDuration } from "@/lib/utils";
 
 // Single-series line chart (score % across attempts on one paper). Per the
 // dataviz method: a lone series needs no legend (the card title already
@@ -66,6 +67,9 @@ export function TrendChart({ attempts }: { attempts: AttemptPoint[] }) {
             Attempt {p.attempt.attempt_number}: {p.attempt.percent ?? 0}%
             {p.attempt.score !== null && p.attempt.max_score !== null
               ? ` (${p.attempt.score}/${p.attempt.max_score} pts)`
+              : ""}
+            {formatDuration(p.attempt.started_at, p.attempt.submitted_at)
+              ? ` — took ${formatDuration(p.attempt.started_at, p.attempt.submitted_at)}`
               : ""}
           </title>
         </circle>

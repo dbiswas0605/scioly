@@ -31,3 +31,13 @@ export function publishPaper(paperId: string): Promise<QuestionPaper> {
 export function deletePaper(paperId: string): Promise<void> {
   return apiFetch<void>(`/api/papers/${paperId}`, { method: "DELETE" });
 }
+
+export function updatePaperDuration(
+  paperId: string,
+  minutes: number,
+): Promise<QuestionPaper> {
+  return apiFetch<QuestionPaper>(`/api/papers/${paperId}/duration`, {
+    method: "PATCH",
+    body: JSON.stringify({ default_duration_minutes: minutes }),
+  });
+}

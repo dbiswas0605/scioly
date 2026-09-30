@@ -13,11 +13,16 @@ import uuid
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
+from app.crud import admin_settings as admin_settings_crud
 from app.crud import question_papers as papers_crud
 from app.crud import questions as questions_crud
 from app.crud import subjects as subjects_crud
 from app.deps import get_db
-from app.schemas.question_paper import QuestionPaperRead, QuestionPaperWithSubjectRead
+from app.schemas.question_paper import (
+    QuestionPaperDurationUpdate,
+    QuestionPaperRead,
+    QuestionPaperWithSubjectRead,
+)
 from app.services.llm.dispatcher import parse_paper_with_llm
 from app.services.llm.errors import LlmNotConfiguredError, LlmRequestError, LlmUnsupportedError
 
@@ -76,10 +81,27 @@ async def upload_paper(
         source_filename=file.filename or "upload",
         source_content_type=file.content_type or "application/octet-stream",
         source_file=file_bytes,
+        default_duration_minutes=admin_settings_crud.get_default_exam_duration_minutes(db),
         description=description,
         created_by=created_by,
     )
     return paper
+
+
+@router.patch("/{paper_id}/duration", response_model=QuestionPaperRead)
+def update_paper_duration(
+    paper_id: uuid.UUID,
+    payload: QuestionPaperDurationUpdate,
+    db: Session = Depends(get_db),
+) -> QuestionPaperRead:
+    """Per-paper timer override — independent of the global default used
+    when a paper is first uploaded (Admin → Timers)."""
+    paper = papers_crud.get_paper_by_id(db, paper_id)
+    if paper is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Question paper not found."
+        )
+    return papers_crud.update_duration(db, paper, payload.default_duration_minutes)
 
 
 @router.post("/{paper_id}/parse", response_model=QuestionPaperRead)

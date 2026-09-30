@@ -43,3 +43,9 @@ export function getPaperAttempts(
     cache: "no-store",
   });
 }
+
+export function getStudentAttempts(studentId: string): Promise<ExamAttemptSummary[]> {
+  return apiFetch<ExamAttemptSummary[]>(`/api/students/${studentId}/attempts`, {
+    cache: "no-store",
+  });
+}

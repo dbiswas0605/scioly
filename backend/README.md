@@ -48,7 +48,10 @@ uvicorn app.main:app --reload --port 8000
 - `DELETE /api/papers/{paper_id}` — deletes a paper (any status) along with its questions/options and any student exam_attempts/attempt_answers (all cascade)
 - `GET /api/papers/{paper_id}/questions`
 - `PATCH /api/papers/{paper_id}/questions/{question_id}` — save a parent's edits and mark a question reviewed
+- `POST /api/papers/{paper_id}/questions/confirm-all` — bulk-accept every question's current server-side state as reviewed ("Save & Confirm All" on the review screen); 400s listing which question numbers still need a correct answer marked, same check as `/publish`
+- `PATCH /api/papers/{paper_id}/duration` — per-paper timer override, independent of the global default below
 - `GET /api/students`, `POST /api/students`
+- `GET /api/students/{student_id}/attempts` — all of one student's attempts across every paper (used to decorate Practice tiles with "already taken" + score)
 - `POST /api/papers/{paper_id}/attempts` — start a timed attempt (get-or-creates the student by name)
 - `GET /api/papers/{paper_id}/attempts?student_id=...` — attempt history for retake comparison
 - `GET /api/attempts/{id}` — sanitized session (no correct answers) for taking/resuming an exam
@@ -56,9 +59,9 @@ uvicorn app.main:app --reload --port 8000
 - `GET /api/attempts/{id}/review` — re-fetch a finished attempt's full review
 - `GET /api/admin/llm-providers`, `PUT /api/admin/llm-providers/{id}`
 - `POST /api/admin/llm-providers/{id}/test` — connectivity/auth check, no completion spent
-- `GET /api/admin/settings`, `PUT /api/admin/settings/{key}`
+- `GET /api/admin/settings`, `PUT /api/admin/settings/{key}` — includes `default_exam_duration_minutes` (Admin → Timers), applied to newly uploaded papers via `admin_settings_crud.get_default_exam_duration_minutes`
 - `GET /api/reports/students` — per-student overview (attempts, papers attempted, average score, last activity)
-- `GET /api/reports/attempts` — per (student, paper) attempt history, for the Parent/Teacher trend dashboard
+- `GET /api/reports/attempts` — per (student, paper) attempt history (`started_at`/`submitted_at` on each point — the frontend derives "time taken"), for the Parent/Teacher trend dashboard
 
 ## LLM parsing notes
 

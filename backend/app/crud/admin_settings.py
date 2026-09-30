@@ -51,8 +51,25 @@ def update_llm_provider(
     return provider
 
 
+DEFAULT_EXAM_DURATION_KEY = "default_exam_duration_minutes"
+DEFAULT_EXAM_DURATION_MINUTES = 30
+
+
 def list_app_settings(db: Session) -> list[AppSetting]:
     return list(db.scalars(select(AppSetting).order_by(AppSetting.key)))
+
+
+def get_default_exam_duration_minutes(db: Session) -> int:
+    """The admin-configurable default timer (minutes) applied to newly
+    uploaded papers. Falls back to 30 if the setting is missing or somehow
+    not a valid integer, rather than failing an upload over it."""
+    setting = db.get(AppSetting, DEFAULT_EXAM_DURATION_KEY)
+    if setting is None or setting.value is None:
+        return DEFAULT_EXAM_DURATION_MINUTES
+    try:
+        return int(setting.value)
+    except ValueError:
+        return DEFAULT_EXAM_DURATION_MINUTES
 
 
 def get_app_setting(db: Session, key: str) -> AppSetting | None:

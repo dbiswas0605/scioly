@@ -113,6 +113,22 @@ export interface LlmProviderTestResult {
   model_available: boolean | null;
 }
 
+export type AppSettingValueType = "string" | "integer" | "boolean" | "json";
+
+export interface AppSetting {
+  key: string;
+  value: string | null;
+  value_type: AppSettingValueType;
+  description: string | null;
+  updated_at: string;
+}
+
+export interface AppSettingUpdateInput {
+  value?: string | null;
+  value_type?: AppSettingValueType;
+  description?: string | null;
+}
+
 // --- Exam-taking (student side) ---
 
 export type AttemptStatus = "in_progress" | "submitted" | "timed_out" | "abandoned";

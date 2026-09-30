@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 PaperStatus = Literal["draft", "pending_review", "published", "archived"]
 
@@ -35,3 +35,7 @@ class QuestionPaperRead(BaseModel):
 
 class QuestionPaperWithSubjectRead(QuestionPaperRead):
     subject_name: str
+
+
+class QuestionPaperDurationUpdate(BaseModel):
+    default_duration_minutes: int = Field(gt=0, le=480)

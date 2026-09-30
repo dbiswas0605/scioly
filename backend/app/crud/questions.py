@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.question import Question
@@ -57,6 +57,18 @@ def list_mcq_question_numbers_missing_correct_answer(
         if q.question_type == "mcq"
         and sum(1 for o in q.options if o.is_correct) != 1
     ]
+
+
+def confirm_all_questions(db: Session, paper_id: uuid.UUID) -> None:
+    """Bulk-accept every question's current server-side state (prompt,
+    options, correct answer) as reviewed — the "Save & Confirm All" action
+    on the upload review screen. Callers must check
+    `list_mcq_question_numbers_missing_correct_answer` first; this doesn't
+    re-validate, it just flips the flag."""
+    db.execute(
+        update(Question).where(Question.paper_id == paper_id).values(is_reviewed=True)
+    )
+    db.commit()
 
 
 def replace_questions_for_paper(

@@ -32,6 +32,7 @@ def create_paper(
     source_filename: str,
     source_content_type: str,
     source_file: bytes,
+    default_duration_minutes: int,
     description: str | None = None,
     created_by: str | None = None,
 ) -> QuestionPaper:
@@ -44,8 +45,19 @@ def create_paper(
         source_file=source_file,
         source_file_size_bytes=len(source_file),
         status="draft",
+        default_duration_minutes=default_duration_minutes,
         created_by=created_by,
     )
+    db.add(paper)
+    db.commit()
+    db.refresh(paper)
+    return paper
+
+
+def update_duration(
+    db: Session, paper: QuestionPaper, minutes: int
+) -> QuestionPaper:
+    paper.default_duration_minutes = minutes
     db.add(paper)
     db.commit()
     db.refresh(paper)
