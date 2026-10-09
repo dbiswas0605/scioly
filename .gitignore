@@ -15,6 +15,7 @@ backend/.ruff_cache/
 
 # Env files (keep .env.example tracked)
 .env
+.env.local-docker
 backend/.env
 
 # OS

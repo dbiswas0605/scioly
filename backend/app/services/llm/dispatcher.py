@@ -1,7 +1,7 @@
 """Entry point routers call to parse a paper. Tries every *enabled*
 LLM provider in priority order (lowest `priority` number first — so local
-providers like Ollama/MLX can be given priority over cloud ones) and falls
-back to the next provider if one fails, rather than requiring a single
+providers like Ollama, LM Studio, and MLX can be given priority over cloud
+ones) and falls back to the next provider if one fails, rather than requiring a single
 "active" provider to work."""
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ _PARSERS = {
     "anthropic": anthropic_parser.parse_paper,
     "openai": openai_compatible.parse_paper,
     "ollama": openai_compatible.parse_paper,
+    "lm_studio": openai_compatible.parse_paper,
     "mlx": openai_compatible.parse_paper,
 }
 
@@ -28,7 +29,7 @@ _PARSERS = {
 def test_provider_connection(provider: LlmProvider) -> dict:
     if provider.provider_key == "anthropic":
         return anthropic_parser.test_anthropic_connection(provider)
-    if provider.provider_key in ("openai", "ollama", "mlx"):
+    if provider.provider_key in ("openai", "ollama", "lm_studio", "mlx"):
         return openai_compatible.test_connection(provider)
     return {
         "ok": False,

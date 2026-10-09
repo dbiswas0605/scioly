@@ -119,7 +119,7 @@ App: http://localhost:3000
 3. Open http://localhost:3000 — pick a section on the home page:
    - **Student** (`/practice`) — subjects load live from the database.
    - **Parent/Teacher** (`/upload`) — upload a question paper; there's also a **Reports** link for student scores/trends.
-   - **Admin** (`/admin`) — configure an LLM provider (Anthropic/OpenAI/Ollama/MLX) here before trying "Parse with AI" on an uploaded paper.
+   - **Admin** (`/admin`) — configure an LLM provider (Anthropic/OpenAI/Ollama/LM Studio/MLX) here before trying "Parse with AI" on an uploaded paper. The LM Studio container desktop is at `https://localhost:3001`.
 
 ## Common issues
 

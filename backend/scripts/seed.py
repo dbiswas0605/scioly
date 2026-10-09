@@ -4,8 +4,8 @@ Seeds:
 - Subjects: Thermodynamics, Food Science, Crime Busters
 - One demo student: "Demo Student"
 - app_settings: default_exam_duration_minutes = 30 (integer)
-- llm_providers: ollama, mlx, openai, anthropic — all disabled by default,
-  with priorities that try local models (Ollama/MLX) before cloud ones.
+- llm_providers: ollama, lm_studio, mlx, openai, anthropic — all disabled by
+  default, with priorities that try local models before cloud ones.
 """
 from __future__ import annotations
 
@@ -73,6 +73,13 @@ LLM_PROVIDERS = [
         "model_name": "llama3.1",
         "base_url": "http://localhost:11434/v1",
         "priority": 10,
+    },
+    {
+        "provider_key": "lm_studio",
+        "display_name": "LM Studio (local)",
+        "model_name": "",
+        "base_url": "http://lm-studio:1234/v1",
+        "priority": 15,
     },
     {
         "provider_key": "mlx",

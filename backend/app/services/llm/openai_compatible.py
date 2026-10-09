@@ -1,10 +1,11 @@
 """Parses an uploaded question paper via any OpenAI-compatible chat
 completions endpoint. Used for the real OpenAI API, and for local models
 served through an OpenAI-compatible server: Ollama exposes one natively at
-`/v1`, and MLX models can be served the same way via a bridge like
-`mlx_lm.server`. We don't load Ollama/MLX models in-process — "local LLM
-support" here means talking to whatever local server you already have
-running, pointed at by the provider's `base_url`.
+`/v1`, LM Studio exposes an OpenAI-compatible API, and MLX models can be
+served the same way via a bridge like `mlx_lm.server`. We don't load local
+models in-process — "local LLM support" here means talking to whatever
+local server you already have running, pointed at by the provider's
+`base_url`.
 """
 from __future__ import annotations
 
@@ -36,6 +37,7 @@ from app.services.llm.text_extraction import (
 # Only used when the provider row doesn't set its own base_url.
 DEFAULT_BASE_URLS = {
     "ollama": "http://localhost:11434/v1",
+    "lm_studio": "http://lm-studio:1234/v1",
     "mlx": "http://localhost:8080/v1",
 }
 
@@ -178,7 +180,7 @@ def parse_paper(provider: LlmProvider, paper: QuestionPaper) -> list[dict]:
                 {"role": "user", "content": content},
             ],
             tools=[PARSE_FUNCTION],
-            tool_choice={"type": "function", "function": {"name": TOOL_NAME}},
+            tool_choice="required",
         )
     except openai.AuthenticationError as exc:
         raise LlmNotConfiguredError(

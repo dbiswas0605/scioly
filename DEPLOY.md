@@ -1,7 +1,7 @@
 # Deploying to a Raspberry Pi (Debian 13 "trixie", arm64)
 
-This runs the **entire app in Docker** — Postgres, the FastAPI backend, and
-the Next.js frontend, all as containers — using `docker-compose.prod.yml`.
+This runs the **entire app in Docker** — Postgres, the FastAPI backend, the
+Next.js frontend, and the LM Studio desktop — using `docker-compose.prod.yml`.
 This is a separate file from the root `docker-compose.yml`, which is
 Postgres-only and meant for local development.
 
@@ -144,6 +144,20 @@ curl http://localhost:8000/api/health                   # {"status":"ok","db":"o
 ```
 
 From another device on your network, open `http://<pi-ip>:3000` in a browser.
+
+## LM Studio container
+
+The Compose stack includes the LinuxServer LM Studio image. Its desktop is
+available locally at `https://localhost:3001` (accept the self-signed
+certificate). Open the desktop, load a model, and start the local server with
+network access enabled so the backend can reach it at
+`http://lm-studio:1234/v1`. Admin → Local LLM shows a blue connection-status
+line that refreshes every 30 seconds.
+
+The image currently supports x86-64 only, not ARM64. On ARM64 Docker hosts
+(including Apple Silicon), Compose uses x86-64 emulation, which is CPU-only
+and may perform poorly for model inference. For better performance, run a
+native LM Studio instance and set its reachable server URL in Admin instead.
 
 ## 7. Configure an LLM provider
 

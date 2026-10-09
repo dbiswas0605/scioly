@@ -81,7 +81,12 @@ export interface QuestionUpdateInput {
   options: QuestionOptionInput[];
 }
 
-export type LlmProviderKey = "anthropic" | "openai" | "ollama" | "mlx";
+export type LlmProviderKey =
+  | "anthropic"
+  | "openai"
+  | "ollama"
+  | "lm_studio"
+  | "mlx";
 
 export interface LlmProvider {
   id: string;

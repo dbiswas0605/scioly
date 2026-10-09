@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CheckCircle2, CircleX, Loader2, PlugZap } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +33,7 @@ export function LlmSettings({ providers: initialProviders }: { providers: LlmPro
   const anthropic = providers.find((p) => p.provider_key === "anthropic");
   const openai = providers.find((p) => p.provider_key === "openai");
   const ollama = providers.find((p) => p.provider_key === "ollama");
+  const lmStudio = providers.find((p) => p.provider_key === "lm_studio");
   const mlx = providers.find((p) => p.provider_key === "mlx");
 
   return (
@@ -66,12 +67,32 @@ export function LlmSettings({ providers: initialProviders }: { providers: LlmPro
           <h3 className="text-sm font-semibold">Local LLM</h3>
           <p className="text-xs text-muted-foreground">
             Point these at a local OpenAI-compatible server — Ollama&apos;s
-            built-in <code>/v1</code> endpoint, or MLX via a bridge like{" "}
-            <code>mlx_lm.server</code>. Model names are whatever you&apos;ve
-            pulled/loaded locally, so there&apos;s no fixed dropdown for these.
+            built-in <code>/v1</code> endpoint, LM Studio&apos;s local server,
+            or MLX via a bridge like <code>mlx_lm.server</code>. Model names
+            are whatever you&apos;ve pulled/loaded locally, so there&apos;s no
+            fixed dropdown for these.
           </p>
         </div>
         {ollama ? <ProviderRow provider={ollama} onSaved={handleSaved} /> : null}
+        {lmStudio ? (
+          <div className="flex flex-col gap-3">
+            <h4 className="text-sm font-medium">LM Studio</h4>
+            <p className="text-xs text-muted-foreground">
+              Open the LM Studio desktop at{" "}
+              <a
+                className="text-primary underline underline-offset-4"
+                href="https://localhost:3001"
+                target="_blank"
+                rel="noreferrer"
+              >
+                https://localhost:3001
+              </a>
+              , load a model, and start its local server with network access.
+              The default server URL is <code>http://lm-studio:1234/v1</code>.
+            </p>
+            <ProviderRow provider={lmStudio} onSaved={handleSaved} />
+          </div>
+        ) : null}
         {mlx ? <ProviderRow provider={mlx} onSaved={handleSaved} /> : null}
       </div>
     </div>
@@ -87,7 +108,10 @@ function ProviderRow({
   modelOptions?: ModelOption[];
   onSaved: (updated: LlmProvider) => void;
 }) {
-  const isLocal = provider.provider_key === "ollama" || provider.provider_key === "mlx";
+  const isLocal =
+    provider.provider_key === "ollama" ||
+    provider.provider_key === "lm_studio" ||
+    provider.provider_key === "mlx";
 
   const [modelName, setModelName] = useState(provider.model_name);
   const [useCustomModel, setUseCustomModel] = useState(
@@ -100,6 +124,44 @@ function ProviderRow({
   const [error, setError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<LlmProviderTestResult | null>(null);
+  const [connectionState, setConnectionState] = useState<
+    "checking" | "connected" | "disconnected"
+  >("checking");
+  const [connectionMessage, setConnectionMessage] = useState("Checking connection…");
+  const localDefaultBaseUrl =
+    provider.provider_key === "lm_studio"
+      ? "http://lm-studio:1234/v1"
+      : provider.provider_key === "mlx"
+        ? "http://localhost:8080/v1"
+        : "http://localhost:11434/v1";
+
+  useEffect(() => {
+    if (provider.provider_key !== "lm_studio") return;
+
+    let cancelled = false;
+    async function refreshConnectionStatus() {
+      try {
+        const result = await testLlmProvider(provider.id);
+        if (cancelled) return;
+        setConnectionState(result.ok ? "connected" : "disconnected");
+        setConnectionMessage(result.message);
+      } catch (err) {
+        if (cancelled) return;
+        setConnectionState("disconnected");
+        setConnectionMessage(getErrorMessage(err, "Could not check the connection."));
+      }
+    }
+
+    void refreshConnectionStatus();
+    const intervalId = window.setInterval(() => {
+      void refreshConnectionStatus();
+    }, 30_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [provider.id, provider.model_name, provider.base_url, provider.provider_key]);
 
   async function handleSave() {
     setSaving(true);
@@ -141,6 +203,10 @@ function ProviderRow({
     try {
       const result = await testLlmProvider(provider.id);
       setTestResult(result);
+      if (provider.provider_key === "lm_studio") {
+        setConnectionState(result.ok ? "connected" : "disconnected");
+        setConnectionMessage(result.message);
+      }
     } catch (err) {
       setError(getErrorMessage(err, "Could not reach the server."));
     } finally {
@@ -251,7 +317,7 @@ function ProviderRow({
             id={`${provider.id}-base-url`}
             value={baseUrl}
             onChange={(event) => setBaseUrl(event.target.value)}
-            placeholder={isLocal ? "http://localhost:11434/v1" : "Default"}
+            placeholder={isLocal ? localDefaultBaseUrl : "Default"}
             disabled={saving}
           />
         </div>
@@ -273,6 +339,30 @@ function ProviderRow({
       </div>
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
+
+      {provider.provider_key === "lm_studio" ? (
+        <p
+          role="status"
+          aria-live="polite"
+          className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300"
+        >
+          {connectionState === "checking" ? (
+            <Loader2 className="size-4 shrink-0 animate-spin" />
+          ) : connectionState === "connected" ? (
+            <CheckCircle2 className="size-4 shrink-0" />
+          ) : (
+            <CircleX className="size-4 shrink-0" />
+          )}
+          <span>
+            <span className="font-medium">Connection status:</span>{" "}
+            {connectionState === "checking"
+              ? "Checking…"
+              : connectionState === "connected"
+                ? `Connected — ${connectionMessage}`
+                : `Disconnected — ${connectionMessage}`}
+          </span>
+        </p>
+      ) : null}
 
       {testResult ? (
         <p

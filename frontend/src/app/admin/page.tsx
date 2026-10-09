@@ -80,8 +80,8 @@ export default async function AdminPage() {
           </div>
           <CardTitle className="text-lg">LLM Settings</CardTitle>
           <CardDescription>
-            Configure Anthropic, OpenAI, Ollama, or MLX (via a local
-            OpenAI-compatible server) as parsers for uploaded question
+            Configure Anthropic, OpenAI, Ollama, LM Studio, or MLX (via a
+            local OpenAI-compatible server) as parsers for uploaded question
             papers. Enable any combination — they&apos;re tried in priority
             order, falling back automatically if one fails.
           </CardDescription>
