@@ -12,9 +12,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -66,8 +66,8 @@ export function QuestionCard({
     setOptions((prev) => prev.map((o, i) => (i === index ? { ...o, ...patch } : o)));
   }
 
-  function setCorrect(index: number) {
-    setOptions((prev) => prev.map((o, i) => ({ ...o, is_correct: i === index })));
+  function setCorrect(index: number, isCorrect: boolean) {
+    updateOption(index, { is_correct: isCorrect });
   }
 
   function addOption() {
@@ -112,8 +112,6 @@ export function QuestionCard({
       setSaving(false);
     }
   }
-
-  const correctIndex = options.findIndex((o) => o.is_correct);
 
   return (
     <Card>
@@ -161,25 +159,23 @@ export function QuestionCard({
 
         {questionType === "mcq" ? (
           <div className="grid gap-2">
-            <Label>Answer options — select the correct one</Label>
+            <Label>Answer options — check all correct choices</Label>
             {question.llm_suggested_answer ? (
               <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Sparkles className="size-3.5 shrink-0" />
-                AI suggested option {question.llm_suggested_answer} — it may have
+                AI suggested option(s) {question.llm_suggested_answer} — it may have
                 used its own subject knowledge rather than an answer key in the
                 source, so double-check before confirming.
               </p>
             ) : null}
-            <RadioGroup
-              value={String(correctIndex)}
-              onValueChange={(value) => setCorrect(Number(value))}
-              className="flex flex-col gap-2"
-            >
+            <div className="flex flex-col gap-2">
               {options.map((option, index) => (
                 <div key={index} className="flex items-center gap-2">
-                  <RadioGroupItem
-                    value={String(index)}
+                  <Checkbox
+                    checked={option.is_correct}
+                    onCheckedChange={(checked) => setCorrect(index, checked === true)}
                     id={`${question.id}-opt-${index}`}
+                    aria-label={`Mark option ${option.option_label} as correct`}
                   />
                   <Input
                     value={option.option_label}
@@ -206,7 +202,7 @@ export function QuestionCard({
                   </Button>
                 </div>
               ))}
-            </RadioGroup>
+            </div>
             <Button
               type="button"
               variant="outline"

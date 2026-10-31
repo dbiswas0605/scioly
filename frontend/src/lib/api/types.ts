@@ -134,6 +134,31 @@ export interface AppSettingUpdateInput {
   description?: string | null;
 }
 
+export interface DatabaseConnection {
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  has_password: boolean;
+  updated_at: string | null;
+  is_active: boolean;
+  tables: DatabaseTableSummary[];
+  total_records: number;
+}
+
+export interface DatabaseTableSummary {
+  name: string;
+  record_count: number;
+}
+
+export interface DatabaseConnectionInput {
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  password?: string;
+}
+
 // --- Exam-taking (student side) ---
 
 export type AttemptStatus = "in_progress" | "submitted" | "timed_out" | "abandoned";
@@ -179,6 +204,7 @@ export interface ExamSession extends ExamAttemptSummary {
 
 export interface AnswerInput {
   question_id: string;
+  selected_option_ids?: string[];
   selected_option_id?: string | null;
   short_answer_text?: string | null;
 }
@@ -191,6 +217,7 @@ export interface AnswerReview {
   explanation_text: string | null;
   points: number;
   options: QuestionOption[];
+  selected_option_ids: string[];
   selected_option_id: string | null;
   short_answer_text: string | null;
   short_answer_expected: string | null;

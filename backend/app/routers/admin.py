@@ -5,6 +5,7 @@ read from environment variables at request time.
 """
 from __future__ import annotations
 
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -19,9 +20,15 @@ from app.schemas.admin_setting import (
     LlmProviderTestResult,
     LlmProviderUpdate,
 )
+from app.schemas.database_connection import (
+    DatabaseConnectionRead,
+    DatabaseConnectionUpdate,
+)
+from app.services import database_connection as database_connection_service
 from app.services.llm.dispatcher import test_provider_connection
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+logger = logging.getLogger(__name__)
 
 
 def _to_provider_read(provider) -> LlmProviderRead:
@@ -82,3 +89,39 @@ def upsert_setting(
 ) -> AppSettingRead:
     updates = payload.model_dump(exclude_unset=True)
     return admin_crud.upsert_app_setting(db, key, updates)
+
+
+@router.get("/database", response_model=DatabaseConnectionRead)
+def get_database_connection() -> DatabaseConnectionRead:
+    return DatabaseConnectionRead(
+        **database_connection_service.active_connection_details()
+    )
+
+
+@router.put("/database", response_model=DatabaseConnectionRead)
+def update_database_connection(
+    payload: DatabaseConnectionUpdate,
+) -> DatabaseConnectionRead:
+    try:
+        tables, total_records = database_connection_service.apply_connection(
+            **payload.model_dump()
+        )
+    except database_connection_service.DatabaseConfigurationError as exc:
+        logger.warning(
+            "Database connection update failed (%s).",
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Could not connect to or initialize the database "
+                f"({type(exc).__name__}). Check the hostname, port, "
+                "credentials, and database permissions."
+            ),
+        ) from exc
+
+    return DatabaseConnectionRead(
+        **database_connection_service.active_connection_details(),
+        tables=tables,
+        total_records=total_records,
+    )

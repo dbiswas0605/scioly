@@ -32,8 +32,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-scioly}:${POSTGRES_PASSWORD:-scioly_dev_password}@postgres:5432/${POSTGRES_DB:-scioly}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${POSTGRES_USER:?Set POSTGRES_USER in .env}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-scioly}}
       CORS_ORIGINS: ${CORS_ORIGINS:?Set CORS_ORIGINS in .env, e.g. http://<pi-ip>:3000}
       ENV: production
     ports:

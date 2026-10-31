@@ -8,15 +8,21 @@ are separate steps a parent/teacher drives from the upload review screen.
 """
 from __future__ import annotations
 
+import json
+import logging
 import uuid
+from queue import Empty, Queue
+from threading import Thread
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.crud import admin_settings as admin_settings_crud
 from app.crud import question_papers as papers_crud
 from app.crud import questions as questions_crud
 from app.crud import subjects as subjects_crud
+from app.db.session import SessionLocal
 from app.deps import get_db
 from app.schemas.question_paper import (
     QuestionPaperDurationUpdate,
@@ -24,9 +30,14 @@ from app.schemas.question_paper import (
     QuestionPaperWithSubjectRead,
 )
 from app.services.llm.dispatcher import parse_paper_with_llm
-from app.services.llm.errors import LlmNotConfiguredError, LlmRequestError, LlmUnsupportedError
+from app.services.llm.errors import (
+    LlmNotConfiguredError,
+    LlmRequestError,
+    LlmUnsupportedError,
+)
 
 router = APIRouter(prefix="/papers", tags=["papers"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("", response_model=list[QuestionPaperWithSubjectRead])
@@ -131,6 +142,102 @@ def parse_paper(paper_id: uuid.UUID, db: Session = Depends(get_db)) -> QuestionP
     return paper
 
 
+@router.post("/{paper_id}/parse/stream")
+def parse_paper_stream(paper_id: uuid.UUID) -> StreamingResponse:
+    """Stream real parsing milestones while keeping the existing JSON parse
+    endpoint available for non-streaming clients."""
+    events: Queue[dict[str, object] | None] = Queue()
+
+    def emit(message: str) -> None:
+        events.put({"type": "log", "message": message})
+
+    def process_paper() -> None:
+        try:
+            with SessionLocal() as db:
+                emit("Opening the stored source document from PostgreSQL.")
+                paper = papers_crud.get_paper_by_id(db, paper_id)
+                if paper is None:
+                    events.put(
+                        {"type": "error", "message": "Question paper not found."}
+                    )
+                    return
+
+                emit(
+                    f"Loaded {paper.source_filename} "
+                    f"({len(paper.source_file):,} bytes)."
+                )
+                parsed_questions = parse_paper_with_llm(db, paper, progress=emit)
+                emit(
+                    f"Question extraction finished with {len(parsed_questions)} "
+                    "question(s). Saving the results..."
+                )
+                questions_crud.replace_questions_for_paper(
+                    db, paper_id, parsed_questions
+                )
+                paper = papers_crud.set_status_and_question_count(
+                    db,
+                    paper,
+                    status="pending_review",
+                    total_questions=len(parsed_questions),
+                )
+                emit("Saved extracted questions. Preparing the review screen.")
+                events.put(
+                    {
+                        "type": "complete",
+                        "paper": QuestionPaperRead.model_validate(paper).model_dump(
+                            mode="json"
+                        ),
+                    }
+                )
+        except (LlmNotConfiguredError, LlmUnsupportedError, LlmRequestError) as exc:
+            emit(f"Parsing failed: {exc}")
+            events.put({"type": "error", "message": str(exc)})
+        except Exception:
+            logger.exception("Unexpected error while parsing paper %s", paper_id)
+            emit(
+                "An unexpected backend or database error stopped document parsing. "
+                "Check the backend logs for the underlying exception."
+            )
+            events.put(
+                {
+                    "type": "error",
+                    "message": "An unexpected backend or database error stopped "
+                    "document parsing. Check the backend logs for the underlying "
+                    "exception.",
+                }
+            )
+        finally:
+            events.put(None)
+
+    def stream_events():
+        worker = Thread(target=process_paper, daemon=True)
+        worker.start()
+        while True:
+            try:
+                event = events.get(timeout=10)
+            except Empty:
+                yield (
+                    json.dumps(
+                        {
+                            "type": "log",
+                            "message": "The LLM request is still in progress; "
+                            "waiting for the model response.",
+                        }
+                    )
+                    + "\n"
+                ).encode("utf-8")
+                continue
+            if event is None:
+                break
+            yield (json.dumps(event, ensure_ascii=False) + "\n").encode("utf-8")
+
+    return StreamingResponse(
+        stream_events(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.post("/{paper_id}/publish", response_model=QuestionPaperRead)
 def publish_paper(paper_id: uuid.UUID, db: Session = Depends(get_db)) -> QuestionPaperRead:
     """Make a paper visible to students. Requires every question to have
@@ -160,7 +267,7 @@ def publish_paper(paper_id: uuid.UUID, db: Session = Depends(get_db)) -> Questio
         numbers = ", ".join(str(n) for n in missing_answers)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Question(s) {numbers} need a correct answer marked before publishing.",
+            detail=f"Question(s) {numbers} need at least one correct option marked before publishing.",
         )
 
     return papers_crud.set_status(db, paper, "published")

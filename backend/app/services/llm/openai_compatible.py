@@ -11,6 +11,9 @@ from __future__ import annotations
 
 import base64
 import json
+from collections.abc import Callable
+from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 import openai
 
@@ -32,6 +35,7 @@ from app.services.llm.text_extraction import (
     DOCX_CONTENT_TYPE,
     extract_docx_text,
     extract_pdf_text,
+    is_markdown_file,
 )
 
 # Only used when the provider row doesn't set its own base_url.
@@ -40,6 +44,8 @@ DEFAULT_BASE_URLS = {
     "lm_studio": "http://lm-studio:1234/v1",
     "mlx": "http://localhost:8080/v1",
 }
+LOCAL_PROVIDER_KEYS = {"ollama", "lm_studio", "mlx"}
+LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 PARSE_FUNCTION = {
     "type": "function",
@@ -52,7 +58,26 @@ PARSE_FUNCTION = {
 
 
 def _resolve_base_url(provider: LlmProvider) -> str | None:
-    return provider.base_url or DEFAULT_BASE_URLS.get(provider.provider_key)
+    base_url = provider.base_url or DEFAULT_BASE_URLS.get(provider.provider_key)
+    if not base_url or provider.provider_key not in LOCAL_PROVIDER_KEYS:
+        return base_url
+
+    parsed = urlsplit(base_url)
+    if provider.provider_key == "lm_studio" and parsed.path.rstrip("/") == "":
+        parsed = parsed._replace(path="/v1")
+
+    if not _is_containerized() or parsed.hostname not in LOOPBACK_HOSTS:
+        return urlunsplit(parsed)
+
+    authority = parsed.netloc
+    host_port = authority.rsplit("@", 1)[-1]
+    userinfo = authority[: -len(host_port)] if "@" in authority else ""
+    port = f":{parsed.port}" if parsed.port is not None else ""
+    return urlunsplit(parsed._replace(netloc=f"{userinfo}host.docker.internal{port}"))
+
+
+def _is_containerized() -> bool:
+    return Path("/.dockerenv").exists() or Path("/run/.containerenv").exists()
 
 
 def _client_for(provider: LlmProvider) -> openai.OpenAI:
@@ -64,7 +89,9 @@ def _client_for(provider: LlmProvider) -> openai.OpenAI:
     )
 
 
-def _build_user_content(paper: QuestionPaper) -> list[dict]:
+def _build_user_content(
+    paper: QuestionPaper, progress: Callable[[str], None] | None = None
+) -> list[dict]:
     content_type = paper.source_content_type
     instruction = {
         "type": "text",
@@ -77,7 +104,18 @@ def _build_user_content(paper: QuestionPaper) -> list[dict]:
     if content_type == "application/pdf":
         # No native PDF support over this API shape — text-only fallback,
         # so embedded images/diagrams are lost.
-        return [{"type": "text", "text": extract_pdf_text(paper.source_file)}, instruction]
+        if progress:
+            progress(
+                "This provider uses text-only PDF extraction; embedded images "
+                "and diagrams may not be included."
+            )
+        return [
+            {
+                "type": "text",
+                "text": extract_pdf_text(paper.source_file, progress=progress),
+            },
+            instruction,
+        ]
 
     if content_type.startswith("image/"):
         data_url = (
@@ -92,8 +130,20 @@ def _build_user_content(paper: QuestionPaper) -> list[dict]:
             instruction,
         ]
 
+    if is_markdown_file(content_type, paper.source_filename):
+        return [
+            {"type": "text", "text": paper.source_file.decode("utf-8", errors="replace")},
+            instruction,
+        ]
+
     if content_type == DOCX_CONTENT_TYPE:
-        return [{"type": "text", "text": extract_docx_text(paper.source_file)}, instruction]
+        return [
+            {
+                "type": "text",
+                "text": extract_docx_text(paper.source_file, progress=progress),
+            },
+            instruction,
+        ]
 
     if content_type == "application/msword":
         raise LlmUnsupportedError(
@@ -162,17 +212,29 @@ def test_connection(provider: LlmProvider) -> dict:
     }
 
 
-def parse_paper(provider: LlmProvider, paper: QuestionPaper) -> list[dict]:
+def parse_paper(
+    provider: LlmProvider,
+    paper: QuestionPaper,
+    progress: Callable[[str], None] | None = None,
+) -> list[dict]:
     if provider.provider_key == "openai" and not provider.api_key:
         raise LlmNotConfiguredError(
             f"{provider.display_name} has no API key set — add one in "
             "Admin → LLM Settings."
         )
 
-    content = _build_user_content(paper)
+    if progress:
+        progress(f"Preparing {paper.source_filename} for the OpenAI-compatible API.")
+    content = _build_user_content(paper, progress=progress)
     client = _client_for(provider)
 
     try:
+        if progress:
+            progress(
+                f"Sending the document to {provider.display_name} model "
+                f"'{provider.model_name}'. The model is identifying questions, "
+                "choices, and answer explanations."
+            )
         response = client.chat.completions.create(
             model=provider.model_name,
             messages=[
@@ -196,6 +258,8 @@ def parse_paper(provider: LlmProvider, paper: QuestionPaper) -> list[dict]:
     except openai.APIError as exc:
         raise LlmRequestError(f"{provider.display_name} request failed: {exc}") from exc
 
+    if progress:
+        progress("Model response received. Reading the structured question data.")
     message = response.choices[0].message
     tool_calls = message.tool_calls or []
     call = next((c for c in tool_calls if c.function.name == TOOL_NAME), None)
@@ -218,4 +282,7 @@ def parse_paper(provider: LlmProvider, paper: QuestionPaper) -> list[dict]:
             f"{provider.display_name} didn't find any questions in this document."
         )
 
-    return clean_parsed_questions(raw_questions)
+    questions = clean_parsed_questions(raw_questions)
+    if progress:
+        progress(f"Validated {len(questions)} extracted question(s).")
+    return questions

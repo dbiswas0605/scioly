@@ -113,6 +113,12 @@ nano .env
 - `CORS_ORIGINS` — `http://<pi-ip>:3000` (or a hostname, if you've set one up).
 - `NEXT_PUBLIC_API_BASE_URL` — `http://<pi-ip>:8000`.
 
+By default, the backend connects to the `postgres` service in this Compose
+file using credentials from `.env`. To use an existing PostgreSQL server
+instead, set `DATABASE_URL` in a private environment file; do not put database
+credentials directly in Compose files or commit them. The local Postgres
+service can remain running; the backend uses the configured URL.
+
 **Why this matters:** `NEXT_PUBLIC_API_BASE_URL` is baked into the
 frontend's browser-side code at *build* time — it's what your browser will
 call directly from your laptop/phone. Get the IP wrong here and you'll need

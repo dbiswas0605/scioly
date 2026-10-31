@@ -5,9 +5,9 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from app import models  # noqa: F401  (populates Base.metadata)
 from app.config import get_settings
 from app.db.base import Base
-from app import models  # noqa: F401  (populates Base.metadata)
 
 # Alembic Config object, provides access to values within alembic.ini.
 config = context.config
@@ -38,6 +38,15 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    injected_connection = config.attributes.get("connection")
+    if injected_connection is not None:
+        context.configure(
+            connection=injected_connection,
+            target_metadata=target_metadata,
+        )
+        with context.begin_transaction():
+            context.run_migrations()
+        return
     """Run migrations in 'online' mode."""
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),

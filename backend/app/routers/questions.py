@@ -65,10 +65,10 @@ def update_question(
     options = data.pop("options")
     if data["question_type"] == "short_answer":
         options = []
-    elif sum(1 for option in options if option["is_correct"]) != 1:
+    elif not any(option["is_correct"] for option in options):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Mark exactly one option as correct before saving this question.",
+            detail="Mark at least one option as correct before saving this question.",
         )
     data["options"] = options
 
@@ -96,7 +96,7 @@ def confirm_all_questions(
         numbers = ", ".join(str(n) for n in missing)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Question(s) {numbers} need a correct answer marked before confirming.",
+            detail=f"Question(s) {numbers} need at least one correct option marked before confirming.",
         )
 
     questions_crud.confirm_all_questions(db, paper_id)

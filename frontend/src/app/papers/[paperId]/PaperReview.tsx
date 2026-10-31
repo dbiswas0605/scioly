@@ -4,6 +4,11 @@ import { useState } from "react";
 import Link from "next/link";
 import { CheckCheck, CheckCircle2, Loader2, Sparkles, TriangleAlert } from "lucide-react";
 
+import {
+  createProcessLogEntry,
+  ProcessLog,
+  type ProcessLogEntry,
+} from "@/components/ProcessLog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,7 +18,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { getErrorMessage } from "@/lib/api/client";
-import { parsePaper, publishPaper } from "@/lib/api/papers";
+import { parsePaperWithProgress, publishPaper } from "@/lib/api/papers";
 import { confirmAllQuestions, getQuestions } from "@/lib/api/questions";
 import type { Question, QuestionPaper } from "@/lib/api/types";
 import { QuestionCard } from "./QuestionCard";
@@ -40,6 +45,7 @@ export function PaperReview({
   const [confirmingAll, setConfirmingAll] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [parseLogs, setParseLogs] = useState<ProcessLogEntry[]>([]);
 
   const unreviewedCount = questions.filter((q) => !q.is_reviewed).length;
   const canPublish =
@@ -48,13 +54,37 @@ export function PaperReview({
   async function handleParse() {
     setParsing(true);
     setActionError(null);
+    setParseLogs([
+      createProcessLogEntry(`Starting document analysis for ${paper.source_filename}.`),
+      createProcessLogEntry("Connecting to the configured LLM provider..."),
+    ]);
     try {
-      const updatedPaper = await parsePaper(paper.id);
+      const updatedPaper = await parsePaperWithProgress(paper.id, (message) => {
+        setParseLogs((entries) => [
+          ...entries.slice(-99),
+          createProcessLogEntry(message),
+        ]);
+      });
+      setParseLogs((entries) => [
+        ...entries,
+        createProcessLogEntry("Loading extracted questions for review..."),
+      ]);
       const updatedQuestions = await getQuestions(paper.id);
       setPaper(updatedPaper);
       setQuestions(updatedQuestions);
+      setParseLogs((entries) => [
+        ...entries,
+        createProcessLogEntry(
+          `Ready. ${updatedQuestions.length} question${updatedQuestions.length === 1 ? "" : "s"} loaded for review.`,
+        ),
+      ]);
     } catch (error) {
-      setActionError(getErrorMessage(error, "Could not reach the server."));
+      const message = getErrorMessage(error, "Could not reach the server.");
+      setActionError(message);
+      setParseLogs((entries) => [
+        ...entries,
+        createProcessLogEntry(`Parsing failed: ${message}`),
+      ]);
     } finally {
       setParsing(false);
     }
@@ -127,6 +157,12 @@ export function PaperReview({
             </div>
           </CardHeader>
         </Card>
+      ) : null}
+
+      {parseLogs.length > 0 ? (
+        <div className="mb-6">
+          <ProcessLog entries={parseLogs} running={parsing} />
+        </div>
       ) : null}
 
       {questions.length === 0 ? (

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Clock, Loader2, TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -12,7 +13,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { submitAttempt } from "@/lib/api/attempts";
 import { getErrorMessage } from "@/lib/api/client";
@@ -25,7 +25,7 @@ import type {
 import { AttemptReviewView } from "./AttemptReviewView";
 
 interface DraftAnswer {
-  selectedOptionId?: string;
+  selectedOptionIds?: string[];
   shortAnswerText?: string;
 }
 
@@ -72,8 +72,11 @@ export function ExamAttemptView({
       .map((question): AnswerInput | null => {
         const draft = answers[question.id];
         if (!draft) return null;
-        if (question.question_type === "mcq" && draft.selectedOptionId) {
-          return { question_id: question.id, selected_option_id: draft.selectedOptionId };
+        if (question.question_type === "mcq" && draft.selectedOptionIds?.length) {
+          return {
+            question_id: question.id,
+            selected_option_ids: draft.selectedOptionIds,
+          };
         }
         if (question.question_type === "short_answer" && draft.shortAnswerText?.trim()) {
           return { question_id: question.id, short_answer_text: draft.shortAnswerText.trim() };
@@ -163,28 +166,43 @@ export function ExamAttemptView({
             </CardHeader>
             <CardContent>
               {question.question_type === "mcq" ? (
-                <RadioGroup
-                  value={answers[question.id]?.selectedOptionId ?? ""}
-                  onValueChange={(value) =>
-                    setAnswers((prev) => ({
-                      ...prev,
-                      [question.id]: { selectedOptionId: value ?? undefined },
-                    }))
-                  }
-                  className="flex flex-col gap-3"
-                >
+                <div className="flex flex-col gap-3">
+                  <p className="text-xs text-muted-foreground">
+                    Select all answers that apply.
+                  </p>
                   {question.options.map((option) => (
                     <Label
                       key={option.id}
                       htmlFor={`${question.id}-${option.id}`}
                       className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 has-[[data-checked]]:border-primary has-[[data-checked]]:bg-primary/5"
                     >
-                      <RadioGroupItem value={option.id} id={`${question.id}-${option.id}`} />
+                      <Checkbox
+                        id={`${question.id}-${option.id}`}
+                        checked={answers[question.id]?.selectedOptionIds?.includes(option.id) ?? false}
+                        onCheckedChange={(checked) =>
+                          setAnswers((prev) => {
+                            const selectedOptionIds = new Set(
+                              prev[question.id]?.selectedOptionIds ?? [],
+                            );
+                            if (checked === true) {
+                              selectedOptionIds.add(option.id);
+                            } else {
+                              selectedOptionIds.delete(option.id);
+                            }
+                            return {
+                              ...prev,
+                              [question.id]: {
+                                selectedOptionIds: [...selectedOptionIds],
+                              },
+                            };
+                          })
+                        }
+                      />
                       <span className="text-sm font-medium">{option.option_label}.</span>
                       <span className="text-sm">{option.option_text}</span>
                     </Label>
                   ))}
-                </RadioGroup>
+                </div>
               ) : (
                 <Textarea
                   value={answers[question.id]?.shortAnswerText ?? ""}

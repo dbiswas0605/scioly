@@ -16,6 +16,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import {
+  createProcessLogEntry,
+  ProcessLog,
+  type ProcessLogEntry,
+} from "@/components/ProcessLog";
 import { getErrorMessage } from "@/lib/api/client";
 import { uploadPaper } from "@/lib/api/papers";
 import { createSubject } from "@/lib/api/subjects";
@@ -31,6 +36,7 @@ export function UploadForm({ subjects: initialSubjects }: { subjects: Subject[] 
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadLogs, setUploadLogs] = useState<ProcessLogEntry[]>([]);
 
   const [addingSubject, setAddingSubject] = useState(false);
   const [newSubjectName, setNewSubjectName] = useState("");
@@ -75,6 +81,12 @@ export function UploadForm({ subjects: initialSubjects }: { subjects: Subject[] 
 
     setSubmitting(true);
     setError(null);
+    setUploadLogs([
+      createProcessLogEntry(`Preparing ${file.name} (${formatFileSize(file.size)}).`),
+      createProcessLogEntry(
+        "Uploading the original document to the backend for storage in PostgreSQL...",
+      ),
+    ]);
     try {
       const formData = new FormData();
       formData.append("subject_id", subjectId);
@@ -82,11 +94,26 @@ export function UploadForm({ subjects: initialSubjects }: { subjects: Subject[] 
       formData.append("file", file);
 
       const paper = await uploadPaper(formData);
+      setUploadLogs((entries) => [
+        ...entries,
+        createProcessLogEntry("Upload complete. Original document saved successfully."),
+        createProcessLogEntry("Opening the paper review and parsing workspace..."),
+      ]);
       router.push(`/papers/${paper.id}`);
     } catch (err) {
       setError(getErrorMessage(err, "Upload failed — is the backend running?"));
+      setUploadLogs((entries) => [
+        ...entries,
+        createProcessLogEntry("Upload failed. See the error message above for details."),
+      ]);
       setSubmitting(false);
     }
+  }
+
+  function formatFileSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
   return (
@@ -170,14 +197,14 @@ export function UploadForm({ subjects: initialSubjects }: { subjects: Subject[] 
         <Input
           id="paper-file"
           type="file"
-          accept=".pdf,.doc,.docx,.txt,image/*"
+          accept=".pdf,.doc,.docx,.txt,.md,.markdown,image/*"
           onChange={(event) => setFile(event.target.files?.[0] ?? null)}
           disabled={submitting}
           className="w-full sm:w-96"
         />
         <p className="text-xs text-muted-foreground">
-          PDF, DOCX, TXT, or image files. (Legacy .doc isn&apos;t supported yet —
-          use .docx or PDF instead.)
+          PDF, DOCX, TXT, Markdown (.md/.markdown), or image files. (Legacy
+          .doc isn&apos;t supported yet — use .docx or PDF instead.)
         </p>
       </div>
 
@@ -186,6 +213,10 @@ export function UploadForm({ subjects: initialSubjects }: { subjects: Subject[] 
           <TriangleAlert className="size-4 shrink-0" />
           {error}
         </p>
+      ) : null}
+
+      {uploadLogs.length > 0 ? (
+        <ProcessLog entries={uploadLogs} running={submitting} />
       ) : null}
 
       <Separator />

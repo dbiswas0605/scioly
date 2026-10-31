@@ -55,13 +55,13 @@ def list_mcq_question_numbers_missing_correct_answer(
         q.question_number
         for q in questions
         if q.question_type == "mcq"
-        and sum(1 for o in q.options if o.is_correct) != 1
+        and not any(o.is_correct for o in q.options)
     ]
 
 
 def confirm_all_questions(db: Session, paper_id: uuid.UUID) -> None:
     """Bulk-accept every question's current server-side state (prompt,
-    options, correct answer) as reviewed — the "Save & Confirm All" action
+    options, correct answers) as reviewed — the "Save & Confirm All" action
     on the upload review screen. Callers must check
     `list_mcq_question_numbers_missing_correct_answer` first; this doesn't
     re-validate, it just flips the flag."""

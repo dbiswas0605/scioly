@@ -2,6 +2,8 @@ import { apiFetch } from "@/lib/api/client";
 import type {
   AppSetting,
   AppSettingUpdateInput,
+  DatabaseConnection,
+  DatabaseConnectionInput,
   LlmProvider,
   LlmProviderTestResult,
   LlmProviderUpdateInput,
@@ -39,6 +41,21 @@ export function updateAppSetting(
   data: AppSettingUpdateInput,
 ): Promise<AppSetting> {
   return apiFetch<AppSetting>(`/api/admin/settings/${key}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export function getDatabaseConnection(): Promise<DatabaseConnection> {
+  return apiFetch<DatabaseConnection>("/api/admin/database", {
+    cache: "no-store",
+  });
+}
+
+export function updateDatabaseConnection(
+  data: DatabaseConnectionInput,
+): Promise<DatabaseConnection> {
+  return apiFetch<DatabaseConnection>("/api/admin/database", {
     method: "PUT",
     body: JSON.stringify(data),
   });

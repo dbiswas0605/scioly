@@ -26,6 +26,14 @@ Postgres listens on `localhost:5433` (not 5432) to avoid clashing with Postgres.
 alembic upgrade head
 ```
 
+Admin → Database Connection can select a separate PostgreSQL database. The
+backend tests connectivity, applies migrations, and idempotently seeds baseline
+rows before switching. The connection is stored in
+`database_connection_settings` in the deployment's original Postgres database,
+which remains required as a local bootstrap/configuration store after switching.
+The password is stored without encryption; Admin is unauthenticated, so keep
+the app on a trusted network.
+
 ## Seed data
 
 ```bash
@@ -57,6 +65,8 @@ uvicorn app.main:app --reload --port 8000
 - `GET /api/attempts/{id}` — sanitized session (no correct answers) for taking/resuming an exam
 - `POST /api/attempts/{id}/submit` — score it (mcq auto-graded; short_answer recorded ungraded) and reveal everything
 - `GET /api/attempts/{id}/review` — re-fetch a finished attempt's full review
+
+MCQs may have one or more correct options. Students can select multiple options; full credit requires selecting exactly the correct set. The `attempt_answer_options` table stores all selections and its migration backfills existing single-option answers.
 - `GET /api/admin/llm-providers`, `PUT /api/admin/llm-providers/{id}`
 - `POST /api/admin/llm-providers/{id}/test` — connectivity/auth check, no completion spent
 - `GET /api/admin/settings`, `PUT /api/admin/settings/{key}` — includes `default_exam_duration_minutes` (Admin → Timers), applied to newly uploaded papers via `admin_settings_crud.get_default_exam_duration_minutes`
@@ -68,10 +78,12 @@ uvicorn app.main:app --reload --port 8000
 `app/services/llm/dispatcher.py` is the entry point `/parse` calls. It tries every **enabled** `llm_providers` row in ascending `priority` order (lower number = tried first) and falls back to the next one if a provider fails — so e.g. a local Ollama/MLX provider can be preferred over a cloud one, with automatic fallback if it's unreachable. Any number of providers can be enabled at once; there's no single exclusive "active" provider anymore.
 
 Five provider types are implemented:
-- **`anthropic`** (`anthropic_parser.py`) — native PDF/image document support via the Anthropic SDK's tool-use.
+- **`anthropic`** (`anthropic_parser.py`) — native PDF/image document support and schema-constrained JSON output via Anthropic's Messages API.
 - **`openai`**, **`ollama`**, **`lm_studio`**, **`mlx`** (`openai_compatible.py`) — all go through the OpenAI Python SDK's chat-completions + function-calling, pointed at either the real OpenAI API or a local `base_url`. We don't load local models in-process — "local LLM support" means talking to an OpenAI-compatible server (Ollama exposes one natively at `/v1`; the LinuxServer LM Studio container is reachable as `http://lm-studio:1234/v1` from the backend; MLX needs a bridge like `mlx_lm.server`). PDFs go through text-only extraction (`pypdf`) on this path, since embedded images/diagrams are lost — Anthropic's native PDF support doesn't have that limitation.
 
-Supported source file types for all providers: PDF, images, `.txt`, and `.docx` (via `python-docx`). Legacy `.doc` is rejected with a clear error — re-save as PDF or `.docx`.
+When the backend runs in Docker, configured loopback URLs for local providers (`localhost`, `127.0.0.1`, or `::1`) are routed to `host.docker.internal`, so a host-native server can be reached from the container. Use the `lm-studio` service hostname when targeting the Compose-hosted LM Studio server.
+
+Supported source file types for all providers: PDF, images, `.txt`, Markdown (`.md`/`.markdown`), and `.docx` (via `python-docx`). Markdown is passed to the LLM as UTF-8 text. Legacy `.doc` is rejected with a clear error — re-save as PDF or `.docx`.
 
 Each provider row has `is_enabled`, `priority`, `model_name`, `base_url` (optional — defaults to `http://localhost:11434/v1` for Ollama, `http://lm-studio:1234/v1` for the Compose LM Studio service, and `http://localhost:8080/v1` for MLX if unset), and `api_key` (optional for local providers, required for OpenAI/Anthropic). `POST /api/admin/llm-providers/{id}/test` does a cheap connectivity/auth check (`models.list()`) without spending tokens on a real completion.
 

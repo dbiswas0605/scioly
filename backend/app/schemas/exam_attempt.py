@@ -11,7 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.question import QuestionOptionRead, QuestionType
 
@@ -71,12 +71,14 @@ class ExamSessionRead(ExamAttemptRead):
 
 class AnswerInput(BaseModel):
     question_id: uuid.UUID
+    selected_option_ids: list[uuid.UUID] = Field(default_factory=list)
+    # Kept for older clients; new clients should send selected_option_ids.
     selected_option_id: uuid.UUID | None = None
     short_answer_text: str | None = None
 
 
 class AttemptSubmit(BaseModel):
-    answers: list[AnswerInput] = []
+    answers: list[AnswerInput] = Field(default_factory=list)
     reason: Literal["submitted", "timed_out"] = "submitted"
 
 
@@ -91,6 +93,7 @@ class AnswerReviewRead(BaseModel):
     explanation_text: str | None
     points: Decimal
     options: list[QuestionOptionRead]
+    selected_option_ids: list[uuid.UUID]
     selected_option_id: uuid.UUID | None
     short_answer_text: str | None
     short_answer_expected: str | None

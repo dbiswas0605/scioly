@@ -88,7 +88,12 @@ export function LlmSettings({ providers: initialProviders }: { providers: LlmPro
                 https://localhost:3001
               </a>
               , load a model, and start its local server with network access.
-              The default server URL is <code>http://lm-studio:1234/v1</code>.
+              The API URL should end in <code>/v1</code>. The Compose server
+              URL is{" "}
+              <code>http://lm-studio:1234/v1</code>. If you run LM Studio on
+              the host while the backend runs in Docker, loopback URLs are
+              routed to the host automatically, and a missing <code>/v1</code>{" "}
+              is added.
             </p>
             <ProviderRow provider={lmStudio} onSaved={handleSaved} />
           </div>

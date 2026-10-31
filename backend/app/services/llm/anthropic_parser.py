@@ -5,10 +5,15 @@ beyond that we fall back to text-only extraction. This is otherwise more
 capable than the OpenAI-compatible path used for OpenAI/Ollama/MLX — see
 `openai_compatible.py`.
 """
+
 from __future__ import annotations
 
 import base64
+import copy
 import io
+import json
+from collections.abc import Callable
+from typing import Any
 
 import anthropic
 from pypdf import PdfReader
@@ -23,14 +28,13 @@ from app.services.llm.errors import (
 from app.services.llm.schema import (
     QUESTIONS_SCHEMA,
     SYSTEM_PROMPT,
-    TOOL_DESCRIPTION,
-    TOOL_NAME,
     clean_parsed_questions,
 )
 from app.services.llm.text_extraction import (
     DOCX_CONTENT_TYPE,
     extract_docx_text,
     extract_pdf_text,
+    is_markdown_file,
 )
 
 # Claude's native PDF document support hard-caps at 100 pages per request
@@ -44,13 +48,34 @@ MAX_NATIVE_PDF_PAGES = 100
 # past this just as easily as hundreds of simple ones — so we also measure
 # the actual token cost via the (free, no-completion) count_tokens endpoint
 # and fall back to text extraction if the native PDF block would be too
-# big, leaving headroom under the 200k limit for the system prompt/tools.
+# big, leaving headroom under the 200k limit for the prompt and output schema.
 MAX_INPUT_TOKENS = 190_000
+MAX_OUTPUT_TOKENS = 32_768
 
-PARSE_TOOL = {
-    "name": TOOL_NAME,
-    "description": TOOL_DESCRIPTION,
-    "input_schema": QUESTIONS_SCHEMA,
+
+def _make_strict_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    strict_schema = copy.deepcopy(schema)
+
+    def make_required(node: dict[str, Any]) -> None:
+        properties = node.get("properties")
+        if properties is not None:
+            node["required"] = list(properties)
+            node["additionalProperties"] = False
+            for property_schema in properties.values():
+                make_required(property_schema)
+        if "items" in node:
+            make_required(node["items"])
+
+    make_required(strict_schema)
+    return strict_schema
+
+
+ANTHROPIC_OUTPUT_SCHEMA = _make_strict_schema(QUESTIONS_SCHEMA)
+ANTHROPIC_OUTPUT_CONFIG = {
+    "format": {
+        "type": "json_schema",
+        "schema": ANTHROPIC_OUTPUT_SCHEMA,
+    }
 }
 
 
@@ -64,8 +89,7 @@ def _count_input_tokens(
         result = client.messages.count_tokens(
             model=provider.model_name,
             system=SYSTEM_PROMPT,
-            tools=[PARSE_TOOL],
-            tool_choice={"type": "tool", "name": TOOL_NAME},
+            extra_body={"output_config": ANTHROPIC_OUTPUT_CONFIG},
             messages=[
                 {
                     "role": "user",
@@ -79,13 +103,20 @@ def _count_input_tokens(
 
 
 def _build_content_block(
-    client: anthropic.Anthropic, provider: LlmProvider, paper: QuestionPaper
+    client: anthropic.Anthropic,
+    provider: LlmProvider,
+    paper: QuestionPaper,
+    progress: Callable[[str], None] | None = None,
 ) -> dict:
     content_type = paper.source_content_type
 
     if content_type == "application/pdf":
         page_count = len(PdfReader(io.BytesIO(paper.source_file)).pages)
+        if progress:
+            progress(f"Scanned the PDF structure: {page_count} page(s) found.")
         if page_count <= MAX_NATIVE_PDF_PAGES:
+            if progress:
+                progress("Preparing the PDF for Anthropic's native document reader.")
             native_block = {
                 "type": "document",
                 "source": {
@@ -94,11 +125,24 @@ def _build_content_block(
                     "data": base64.b64encode(paper.source_file).decode("ascii"),
                 },
             }
+            if progress:
+                progress("Estimating document size against the model context limit.")
             token_count = _count_input_tokens(client, provider, native_block)
             if token_count is None or token_count <= MAX_INPUT_TOKENS:
                 return native_block
 
-        text_block = {"type": "text", "text": extract_pdf_text(paper.source_file)}
+        if progress:
+            progress(
+                "Using text-only PDF extraction because native document processing "
+                "is unavailable or exceeds the model context budget; embedded "
+                "images and diagrams may not be included."
+            )
+        text_block = {
+            "type": "text",
+            "text": extract_pdf_text(paper.source_file, progress=progress),
+        }
+        if progress:
+            progress("Checking extracted text against the model context limit.")
         token_count = _count_input_tokens(client, provider, text_block)
         if token_count is not None and token_count > MAX_INPUT_TOKENS:
             raise LlmRequestError(
@@ -125,8 +169,17 @@ def _build_content_block(
             "text": paper.source_file.decode("utf-8", errors="replace"),
         }
 
+    if is_markdown_file(content_type, paper.source_filename):
+        return {
+            "type": "text",
+            "text": paper.source_file.decode("utf-8", errors="replace"),
+        }
+
     if content_type == DOCX_CONTENT_TYPE:
-        return {"type": "text", "text": extract_docx_text(paper.source_file)}
+        return {
+            "type": "text",
+            "text": extract_docx_text(paper.source_file, progress=progress),
+        }
 
     if content_type == "application/msword":
         raise LlmUnsupportedError(
@@ -145,7 +198,9 @@ def test_anthropic_connection(provider: LlmProvider) -> dict:
     one the account can access. Never raises — always returns a result dict
     with `ok` describing what happened, so callers can surface it as a
     normal (200) response rather than an error."""
-    client = anthropic.Anthropic(api_key=provider.api_key, base_url=provider.base_url or None)
+    client = anthropic.Anthropic(
+        api_key=provider.api_key, base_url=provider.base_url or None
+    )
     try:
         models = client.models.list(limit=100)
         model_ids = [m.id for m in models.data]
@@ -189,7 +244,11 @@ def test_anthropic_connection(provider: LlmProvider) -> dict:
     }
 
 
-def parse_paper(provider: LlmProvider, paper: QuestionPaper) -> list[dict]:
+def parse_paper(
+    provider: LlmProvider,
+    paper: QuestionPaper,
+    progress: Callable[[str], None] | None = None,
+) -> list[dict]:
     """Call Anthropic Claude to extract structured questions from a paper's
     uploaded source file. Returns cleaned question dicts ready for
     `app.crud.questions.replace_questions_for_paper`."""
@@ -199,16 +258,24 @@ def parse_paper(provider: LlmProvider, paper: QuestionPaper) -> list[dict]:
             "Admin → LLM Settings."
         )
 
-    client = anthropic.Anthropic(api_key=provider.api_key, base_url=provider.base_url or None)
-    content_block = _build_content_block(client, provider, paper)
+    client = anthropic.Anthropic(
+        api_key=provider.api_key, base_url=provider.base_url or None
+    )
+    if progress:
+        progress(f"Preparing {paper.source_filename} for the Anthropic API.")
+    content_block = _build_content_block(client, provider, paper, progress=progress)
 
     try:
-        response = client.messages.create(
+        if progress:
+            progress(
+                f"Sending the document to Anthropic model '{provider.model_name}'. "
+                "The model is reading the paper and identifying its questions."
+            )
+        with client.messages.stream(
             model=provider.model_name,
-            max_tokens=8192,
+            max_tokens=MAX_OUTPUT_TOKENS,
             system=SYSTEM_PROMPT,
-            tools=[PARSE_TOOL],
-            tool_choice={"type": "tool", "name": TOOL_NAME},
+            extra_body={"output_config": ANTHROPIC_OUTPUT_CONFIG},
             messages=[
                 {
                     "role": "user",
@@ -224,7 +291,8 @@ def parse_paper(provider: LlmProvider, paper: QuestionPaper) -> list[dict]:
                     ],
                 }
             ],
-        )
+        ) as stream:
+            response = stream.get_final_message()
     except anthropic.AuthenticationError as exc:
         raise LlmNotConfiguredError(
             f"{provider.display_name}'s API key was rejected — check it in "
@@ -233,14 +301,43 @@ def parse_paper(provider: LlmProvider, paper: QuestionPaper) -> list[dict]:
     except anthropic.APIError as exc:
         raise LlmRequestError(f"{provider.display_name} request failed: {exc}") from exc
 
-    tool_use = next(
-        (block for block in response.content if block.type == "tool_use"), None
+    if progress:
+        progress(
+            "Model response received "
+            f"(stop reason: {response.stop_reason}; "
+            f"{response.usage.output_tokens:,} output tokens). "
+            "Reading the structured question data."
+        )
+    if response.stop_reason == "max_tokens":
+        raise LlmRequestError(
+            f"{provider.display_name} response was truncated at the "
+            f"{MAX_OUTPUT_TOKENS:,}-token output limit. Split the document "
+            "into smaller files and try again."
+        )
+
+    text_block = next(
+        (block for block in response.content if block.type == "text"), None
     )
-    if tool_use is None:
-        raise LlmRequestError(f"{provider.display_name} didn't return any structured questions.")
+    if text_block is None:
+        raise LlmRequestError(
+            f"{provider.display_name} returned no structured text output."
+        )
+    try:
+        output = json.loads(text_block.text)
+    except (TypeError, ValueError) as exc:
+        raise LlmRequestError(
+            f"{provider.display_name} returned malformed structured output "
+            f"(stop reason: {response.stop_reason}; "
+            f"{response.usage.output_tokens:,} output tokens): {exc}"
+        ) from exc
 
-    raw_questions = tool_use.input.get("questions") or []
+    raw_questions = output.get("questions") or []
     if not raw_questions:
-        raise LlmRequestError(f"{provider.display_name} didn't find any questions in this document.")
+        raise LlmRequestError(
+            f"{provider.display_name} didn't find any questions in this document."
+        )
 
-    return clean_parsed_questions(raw_questions)
+    questions = clean_parsed_questions(raw_questions)
+    if progress:
+        progress(f"Validated {len(questions)} extracted question(s).")
+    return questions

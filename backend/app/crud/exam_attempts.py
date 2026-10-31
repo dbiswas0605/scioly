@@ -1,9 +1,8 @@
 """CRUD helpers for taking and scoring ExamAttempts.
 
-Scoring policy: only `mcq` answers are auto-graded (is_correct = whether the
-selected option's is_correct flag is set); `short_answer` answers are
-stored with is_correct left null (ungraded) and don't count toward
-max_score/correct_count.
+Scoring policy: only `mcq` answers are auto-graded; a multi-select is
+correct only when the selected option IDs exactly match the correct IDs.
+`short_answer` answers are stored as ungraded.
 """
 from __future__ import annotations
 
@@ -11,13 +10,19 @@ import uuid
 from typing import Any
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.attempt_answer import AttemptAnswer
 from app.models.exam_attempt import ExamAttempt
 from app.models.question import Question
 from app.models.question_paper import QuestionPaper
 from app.models.student import Student
+
+
+def _is_exact_option_selection(
+    selected_option_ids: set[uuid.UUID], correct_option_ids: set[uuid.UUID]
+) -> bool:
+    return bool(correct_option_ids) and selected_option_ids == correct_option_ids
 
 
 def list_attempts(db: Session) -> list[ExamAttempt]:
@@ -93,7 +98,8 @@ def get_attempt_answers_with_details(
             select(AttemptAnswer)
             .where(AttemptAnswer.attempt_id == attempt_id)
             .options(
-                joinedload(AttemptAnswer.question).joinedload(Question.options)
+                joinedload(AttemptAnswer.question).joinedload(Question.options),
+                selectinload(AttemptAnswer.selected_options),
             )
         ).unique()
     )
@@ -127,12 +133,22 @@ def submit_attempt(
             continue  # ignore answers for questions not on this paper
 
         is_correct: bool | None = None
-        selected_option_id = answer.get("selected_option_id")
+        selected_option_ids = answer.get("selected_option_ids") or []
+        if not selected_option_ids and answer.get("selected_option_id"):
+            selected_option_ids = [answer["selected_option_id"]]
+        selected_options = []
         if question.question_type == "mcq":
-            selected_option = (
-                options_by_id.get(selected_option_id) if selected_option_id else None
-            )
-            is_correct = bool(selected_option and selected_option.is_correct)
+            selected_options = [
+                options_by_id[option_id]
+                for option_id in selected_option_ids
+                if option_id in options_by_id
+                and options_by_id[option_id].question_id == question.id
+            ]
+            selected_ids = {option.id for option in selected_options}
+            correct_ids = {
+                option.id for option in question.options if option.is_correct
+            }
+            is_correct = _is_exact_option_selection(selected_ids, correct_ids)
             if is_correct:
                 correct_count += 1
                 score += question.points
@@ -141,9 +157,13 @@ def submit_attempt(
             AttemptAnswer(
                 attempt_id=attempt.id,
                 question_id=question.id,
-                selected_option_id=selected_option_id
+                selected_option_id=selected_option_ids[0]
                 if question.question_type == "mcq"
+                and selected_option_ids
                 else None,
+                selected_options=selected_options
+                if question.question_type == "mcq"
+                else [],
                 short_answer_text=answer.get("short_answer_text")
                 if question.question_type == "short_answer"
                 else None,

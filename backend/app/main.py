@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +18,7 @@ from app.routers import (
     students,
     subjects,
 )
+from app.services.database_connection import apply_saved_connection_on_startup
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,7 +28,14 @@ logger = logging.getLogger("scioly")
 
 settings = get_settings()
 
-app = FastAPI(title="Scioly API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    apply_saved_connection_on_startup()
+    yield
+
+
+app = FastAPI(title="Scioly API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

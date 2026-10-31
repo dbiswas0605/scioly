@@ -1,4 +1,5 @@
-import { Bot, FileStack, Timer } from "lucide-react";
+import { Bot, Database, FileStack, Timer } from "lucide-react";
+import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -8,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { buttonVariants } from "@/components/ui/button";
 import { getErrorMessage } from "@/lib/api/client";
 import { getAppSettings, getLlmProviders } from "@/lib/api/admin";
 import { getPapers } from "@/lib/api/papers";
@@ -92,6 +94,29 @@ export default async function AdminPage() {
           ) : (
             <LlmSettings providers={providers} />
           )}
+        </CardContent>
+      </Card>
+
+      <Card className="mb-6">
+        <CardHeader className="gap-3">
+          <div className="flex items-center justify-between">
+            <span className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Database className="size-4.5" />
+            </span>
+          </div>
+          <CardTitle className="text-lg">Database Connection</CardTitle>
+          <CardDescription>
+            Choose the PostgreSQL database used by the app. Existing local
+            database data remains intact when you switch.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Link
+            href="/admin/database"
+            className={buttonVariants({ variant: "outline" })}
+          >
+            Configure database connection
+          </Link>
         </CardContent>
       </Card>
 

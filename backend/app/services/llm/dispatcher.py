@@ -5,6 +5,8 @@ ones) and falls back to the next provider if one fails, rather than requiring a 
 "active" provider to work."""
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from sqlalchemy.orm import Session
 
 from app.crud import admin_settings as admin_crud
@@ -39,9 +41,17 @@ def test_provider_connection(provider: LlmProvider) -> dict:
     }
 
 
-def parse_paper_with_llm(db: Session, paper: QuestionPaper) -> list[dict]:
+def parse_paper_with_llm(
+    db: Session,
+    paper: QuestionPaper,
+    progress: Callable[[str], None] | None = None,
+) -> list[dict]:
+    if progress:
+        progress("Checking enabled LLM providers in configured priority order.")
     providers = admin_crud.list_enabled_llm_providers(db)
     if not providers:
+        if progress:
+            progress("No enabled LLM providers are available.")
         raise LlmNotConfiguredError(
             "No LLM provider is enabled. Turn one on in Admin → LLM "
             "Settings first."
@@ -55,9 +65,25 @@ def parse_paper_with_llm(db: Session, paper: QuestionPaper) -> list[dict]:
             continue
 
         try:
-            return parser(provider, paper)
+            if progress:
+                progress(
+                    f"Starting {provider.display_name} with model "
+                    f"'{provider.model_name}'."
+                )
+            questions = parser(provider, paper, progress=progress)
+            if progress:
+                progress(
+                    f"{provider.display_name} returned {len(questions)} "
+                    "structured question(s)."
+                )
+            return questions
         except (LlmNotConfiguredError, LlmUnsupportedError, LlmRequestError) as exc:
             failures.append(f"{provider.display_name}: {exc}")
+            if progress:
+                progress(
+                    f"{provider.display_name} failed: {exc} "
+                    "Checking the next enabled provider."
+                )
             continue
 
     raise LlmRequestError(

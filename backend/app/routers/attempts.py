@@ -149,6 +149,29 @@ def submit_attempt(
     paper = papers_crud.get_paper_by_id(db, attempt.paper_id)
     questions = questions_crud.list_questions_for_paper(db, attempt.paper_id)
 
+    questions_by_id = {question.id: question for question in questions}
+    seen_question_ids: set[uuid.UUID] = set()
+    for answer in payload.answers:
+        question = questions_by_id.get(answer.question_id)
+        if question is None or answer.question_id in seen_question_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Answers must reference each question on this paper at most once.",
+            )
+        seen_question_ids.add(answer.question_id)
+        if question.question_type == "mcq":
+            selected_ids = answer.selected_option_ids or (
+                [answer.selected_option_id] if answer.selected_option_id else []
+            )
+            option_ids = {option.id for option in question.options}
+            if len(selected_ids) != len(set(selected_ids)) or any(
+                option_id not in option_ids for option_id in selected_ids
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Selected options for question {question.question_number} are invalid.",
+                )
+
     attempt = attempts_crud.submit_attempt(
         db,
         attempt=attempt,
@@ -214,7 +237,13 @@ def _build_review(
                 explanation_text=question.explanation_text,
                 points=question.points,
                 options=options,
-                selected_option_id=row.selected_option_id if row else None,
+                selected_option_ids=[
+                    option.id for option in row.selected_options
+                ] if row else [],
+                selected_option_id=(
+                    row.selected_option_id
+                    or (row.selected_options[0].id if row.selected_options else None)
+                ) if row else None,
                 short_answer_text=row.short_answer_text if row else None,
                 short_answer_expected=question.short_answer_expected,
                 is_correct=is_correct,
