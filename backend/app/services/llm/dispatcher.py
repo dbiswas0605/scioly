@@ -18,6 +18,12 @@ from app.services.llm.errors import (
     LlmRequestError,
     LlmUnsupportedError,
 )
+from app.services.llm.schema import (
+    DEFAULT_PARSE_SYSTEM_PROMPT,
+    DEFAULT_PARSE_USER_PROMPT,
+    PARSE_SYSTEM_PROMPT_KEY,
+    PARSE_USER_PROMPT_KEY,
+)
 
 _PARSERS = {
     "anthropic": anthropic_parser.parse_paper,
@@ -48,6 +54,22 @@ def parse_paper_with_llm(
 ) -> list[dict]:
     if progress:
         progress("Checking enabled LLM providers in configured priority order.")
+    prompt_setting = admin_crud.get_app_setting(db, PARSE_USER_PROMPT_KEY)
+    user_prompt = (
+        prompt_setting.value
+        if prompt_setting is not None
+        and prompt_setting.value
+        and prompt_setting.value.strip()
+        else DEFAULT_PARSE_USER_PROMPT
+    )
+    system_prompt_setting = admin_crud.get_app_setting(db, PARSE_SYSTEM_PROMPT_KEY)
+    system_prompt = (
+        system_prompt_setting.value
+        if system_prompt_setting is not None
+        and system_prompt_setting.value
+        and system_prompt_setting.value.strip()
+        else DEFAULT_PARSE_SYSTEM_PROMPT
+    )
     providers = admin_crud.list_enabled_llm_providers(db)
     if not providers:
         if progress:
@@ -70,7 +92,13 @@ def parse_paper_with_llm(
                     f"Starting {provider.display_name} with model "
                     f"'{provider.model_name}'."
                 )
-            questions = parser(provider, paper, progress=progress)
+            questions = parser(
+                provider,
+                paper,
+                progress=progress,
+                user_prompt=user_prompt,
+                system_prompt=system_prompt,
+            )
             if progress:
                 progress(
                     f"{provider.display_name} returned {len(questions)} "

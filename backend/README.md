@@ -69,7 +69,7 @@ uvicorn app.main:app --reload --port 8000
 MCQs may have one or more correct options. Students can select multiple options; full credit requires selecting exactly the correct set. The `attempt_answer_options` table stores all selections and its migration backfills existing single-option answers.
 - `GET /api/admin/llm-providers`, `PUT /api/admin/llm-providers/{id}`
 - `POST /api/admin/llm-providers/{id}/test` — connectivity/auth check, no completion spent
-- `GET /api/admin/settings`, `PUT /api/admin/settings/{key}` — includes `default_exam_duration_minutes` (Admin → Timers), applied to newly uploaded papers via `admin_settings_crud.get_default_exam_duration_minutes`
+- `GET /api/admin/settings`, `PUT /api/admin/settings/{key}` — includes `default_exam_duration_minutes` (Admin → Timers), `question_paper_parse_system_prompt`, and `question_paper_parse_user_prompt` (Admin → LLM Parsing Prompts). Both LLM prompts are plain text; `{paper_title}` in the user prompt is replaced with the uploaded paper title.
 - `GET /api/reports/students` — per-student overview (attempts, papers attempted, average score, last activity)
 - `GET /api/reports/attempts` — per (student, paper) attempt history (`started_at`/`submitted_at` on each point — the frontend derives "time taken"), for the Parent/Teacher trend dashboard
 

@@ -25,11 +25,13 @@ from app.services.llm.errors import (
     LlmUnsupportedError,
 )
 from app.services.llm.schema import (
+    DEFAULT_PARSE_SYSTEM_PROMPT,
+    DEFAULT_PARSE_USER_PROMPT,
     QUESTIONS_SCHEMA,
-    SYSTEM_PROMPT,
     TOOL_DESCRIPTION,
     TOOL_NAME,
     clean_parsed_questions,
+    render_parse_user_prompt,
 )
 from app.services.llm.text_extraction import (
     DOCX_CONTENT_TYPE,
@@ -90,14 +92,15 @@ def _client_for(provider: LlmProvider) -> openai.OpenAI:
 
 
 def _build_user_content(
-    paper: QuestionPaper, progress: Callable[[str], None] | None = None
+    paper: QuestionPaper,
+    progress: Callable[[str], None] | None = None,
+    user_prompt: str = DEFAULT_PARSE_USER_PROMPT,
 ) -> list[dict]:
     content_type = paper.source_content_type
     instruction = {
         "type": "text",
         "text": (
-            f"This document is titled '{paper.title}'. Extract every "
-            "question from it."
+            render_parse_user_prompt(user_prompt, paper.title)
         ),
     }
 
@@ -216,6 +219,8 @@ def parse_paper(
     provider: LlmProvider,
     paper: QuestionPaper,
     progress: Callable[[str], None] | None = None,
+    user_prompt: str = DEFAULT_PARSE_USER_PROMPT,
+    system_prompt: str = DEFAULT_PARSE_SYSTEM_PROMPT,
 ) -> list[dict]:
     if provider.provider_key == "openai" and not provider.api_key:
         raise LlmNotConfiguredError(
@@ -225,7 +230,9 @@ def parse_paper(
 
     if progress:
         progress(f"Preparing {paper.source_filename} for the OpenAI-compatible API.")
-    content = _build_user_content(paper, progress=progress)
+    content = _build_user_content(
+        paper, progress=progress, user_prompt=user_prompt
+    )
     client = _client_for(provider)
 
     try:
@@ -238,7 +245,7 @@ def parse_paper(
         response = client.chat.completions.create(
             model=provider.model_name,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": content},
             ],
             tools=[PARSE_FUNCTION],

@@ -5,7 +5,18 @@ from __future__ import annotations
 
 from typing import Any
 
-SYSTEM_PROMPT = (
+PARSE_USER_PROMPT_KEY = "question_paper_parse_user_prompt"
+PARSE_SYSTEM_PROMPT_KEY = "question_paper_parse_system_prompt"
+DEFAULT_PARSE_USER_PROMPT = (
+    "This document is titled '{paper_title}'. Extract every question from it."
+)
+
+
+def render_parse_user_prompt(template: str, paper_title: str) -> str:
+    return template.replace("{paper_title}", paper_title)
+
+
+DEFAULT_PARSE_SYSTEM_PROMPT = (
     "You are an expert at digitizing Science Olympiad practice exams. You "
     "will be given the raw content of an uploaded question paper. Extract "
     "every question in the document, preserving the original question "
@@ -34,6 +45,7 @@ SYSTEM_PROMPT = (
     "schema; use an empty array when there are no applicable option labels "
     "and null for nullable fields that do not apply."
 )
+SYSTEM_PROMPT = DEFAULT_PARSE_SYSTEM_PROMPT
 
 QUESTIONS_SCHEMA: dict[str, Any] = {
     "type": "object",

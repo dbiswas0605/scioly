@@ -26,9 +26,11 @@ from app.services.llm.errors import (
     LlmUnsupportedError,
 )
 from app.services.llm.schema import (
+    DEFAULT_PARSE_SYSTEM_PROMPT,
+    DEFAULT_PARSE_USER_PROMPT,
     QUESTIONS_SCHEMA,
-    SYSTEM_PROMPT,
     clean_parsed_questions,
+    render_parse_user_prompt,
 )
 from app.services.llm.text_extraction import (
     DOCX_CONTENT_TYPE,
@@ -80,7 +82,11 @@ ANTHROPIC_OUTPUT_CONFIG = {
 
 
 def _count_input_tokens(
-    client: anthropic.Anthropic, provider: LlmProvider, content_block: dict
+    client: anthropic.Anthropic,
+    provider: LlmProvider,
+    content_block: dict,
+    user_prompt: str = "placeholder",
+    system_prompt: str = DEFAULT_PARSE_SYSTEM_PROMPT,
 ) -> int | None:
     """Returns None if counting itself fails — callers should treat that as
     "assume it's fine" and let the real request surface any error, rather
@@ -88,12 +94,12 @@ def _count_input_tokens(
     try:
         result = client.messages.count_tokens(
             model=provider.model_name,
-            system=SYSTEM_PROMPT,
+            system=system_prompt,
             extra_body={"output_config": ANTHROPIC_OUTPUT_CONFIG},
             messages=[
                 {
                     "role": "user",
-                    "content": [content_block, {"type": "text", "text": "placeholder"}],
+                    "content": [content_block, {"type": "text", "text": user_prompt}],
                 }
             ],
         )
@@ -107,8 +113,11 @@ def _build_content_block(
     provider: LlmProvider,
     paper: QuestionPaper,
     progress: Callable[[str], None] | None = None,
+    user_prompt: str = DEFAULT_PARSE_USER_PROMPT,
+    system_prompt: str = DEFAULT_PARSE_SYSTEM_PROMPT,
 ) -> dict:
     content_type = paper.source_content_type
+    rendered_prompt = render_parse_user_prompt(user_prompt, paper.title)
 
     if content_type == "application/pdf":
         page_count = len(PdfReader(io.BytesIO(paper.source_file)).pages)
@@ -127,7 +136,13 @@ def _build_content_block(
             }
             if progress:
                 progress("Estimating document size against the model context limit.")
-            token_count = _count_input_tokens(client, provider, native_block)
+            token_count = _count_input_tokens(
+                client,
+                provider,
+                native_block,
+                rendered_prompt,
+                system_prompt,
+            )
             if token_count is None or token_count <= MAX_INPUT_TOKENS:
                 return native_block
 
@@ -143,7 +158,13 @@ def _build_content_block(
         }
         if progress:
             progress("Checking extracted text against the model context limit.")
-        token_count = _count_input_tokens(client, provider, text_block)
+        token_count = _count_input_tokens(
+            client,
+            provider,
+            text_block,
+            rendered_prompt,
+            system_prompt,
+        )
         if token_count is not None and token_count > MAX_INPUT_TOKENS:
             raise LlmRequestError(
                 f"{provider.display_name}: this document is too large to parse "
@@ -248,6 +269,8 @@ def parse_paper(
     provider: LlmProvider,
     paper: QuestionPaper,
     progress: Callable[[str], None] | None = None,
+    user_prompt: str = DEFAULT_PARSE_USER_PROMPT,
+    system_prompt: str = DEFAULT_PARSE_SYSTEM_PROMPT,
 ) -> list[dict]:
     """Call Anthropic Claude to extract structured questions from a paper's
     uploaded source file. Returns cleaned question dicts ready for
@@ -263,7 +286,15 @@ def parse_paper(
     )
     if progress:
         progress(f"Preparing {paper.source_filename} for the Anthropic API.")
-    content_block = _build_content_block(client, provider, paper, progress=progress)
+    rendered_prompt = render_parse_user_prompt(user_prompt, paper.title)
+    content_block = _build_content_block(
+        client,
+        provider,
+        paper,
+        progress=progress,
+        user_prompt=user_prompt,
+        system_prompt=system_prompt,
+    )
 
     try:
         if progress:
@@ -274,7 +305,7 @@ def parse_paper(
         with client.messages.stream(
             model=provider.model_name,
             max_tokens=MAX_OUTPUT_TOKENS,
-            system=SYSTEM_PROMPT,
+            system=system_prompt,
             extra_body={"output_config": ANTHROPIC_OUTPUT_CONFIG},
             messages=[
                 {
@@ -283,10 +314,7 @@ def parse_paper(
                         content_block,
                         {
                             "type": "text",
-                            "text": (
-                                f"This document is titled '{paper.title}'. "
-                                "Extract every question from it."
-                            ),
+                            "text": rendered_prompt,
                         },
                     ],
                 }

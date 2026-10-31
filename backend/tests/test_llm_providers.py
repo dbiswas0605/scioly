@@ -134,10 +134,19 @@ def test_parse_paper_uses_supported_tool_choice(monkeypatch) -> None:
     progress_messages = []
 
     questions = openai_compatible.parse_paper(
-        provider, paper, progress=progress_messages.append
+        provider,
+        paper,
+        progress=progress_messages.append,
+        user_prompt="Read {paper_title} carefully and extract every question.",
     )
 
     assert call_arguments["tool_choice"] == "required"
+    assert call_arguments["messages"][1]["content"][-1]["text"] == (
+        "Read Sample carefully and extract every question."
+    )
+    assert call_arguments["messages"][0]["content"] == (
+        openai_compatible.DEFAULT_PARSE_SYSTEM_PROMPT
+    )
     assert questions[0]["prompt_text"] == "What is 2 + 2?"
     assert any("Sending the document" in message for message in progress_messages)
     assert any(
@@ -227,9 +236,17 @@ def test_anthropic_parser_uses_json_schema_output_without_tool_choice(
         source_filename="sample.md",
     )
 
-    questions = anthropic_parser.parse_paper(provider, paper)
+    questions = anthropic_parser.parse_paper(
+        provider,
+        paper,
+        user_prompt="Read {paper_title} carefully and extract every question.",
+    )
 
     assert questions[0]["prompt_text"] == "What is 2 + 2?"
+    assert call_arguments["messages"][0]["content"][-1]["text"] == (
+        "Read Sample carefully and extract every question."
+    )
+    assert call_arguments["system"] == anthropic_parser.DEFAULT_PARSE_SYSTEM_PROMPT
     assert call_arguments["max_tokens"] == anthropic_parser.MAX_OUTPUT_TOKENS
     assert "tool_choice" not in call_arguments
     assert "tools" not in call_arguments
@@ -309,11 +326,27 @@ def test_dispatcher_logs_provider_failure_reason(monkeypatch) -> None:
         model_name="test-model",
     )
 
-    def fail_parse(_provider, _paper, progress=None):
+    received_prompts = []
+
+    def fail_parse(
+        _provider, _paper, progress=None, user_prompt=None, system_prompt=None
+    ):
+        received_prompts.append((user_prompt, system_prompt))
         raise LlmRequestError("Connection timed out after 30 seconds.")
 
     monkeypatch.setattr(
         dispatcher.admin_crud, "list_enabled_llm_providers", lambda _db: [provider]
+    )
+    monkeypatch.setattr(
+        dispatcher.admin_crud,
+        "get_app_setting",
+        lambda _db, key: SimpleNamespace(
+            value=(
+                "Custom plain-text user prompt."
+                if key == dispatcher.PARSE_USER_PROMPT_KEY
+                else "Custom plain-text system prompt."
+            )
+        ),
     )
     monkeypatch.setitem(dispatcher._PARSERS, "openai", fail_parse)
     messages = []
@@ -329,3 +362,6 @@ def test_dispatcher_logs_provider_failure_reason(monkeypatch) -> None:
         "OpenAI failed: Connection timed out after 30 seconds." in message
         for message in messages
     )
+    assert received_prompts == [
+        ("Custom plain-text user prompt.", "Custom plain-text system prompt.")
+    ]

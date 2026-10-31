@@ -3,7 +3,7 @@
 Seeds:
 - Subjects: Thermodynamics, Food Science, Crime Busters
 - One demo student: "Demo Student"
-- app_settings: default_exam_duration_minutes = 30 (integer)
+- app_settings: default exam duration and question-paper parsing prompts
 - llm_providers: ollama, lm_studio, mlx, openai, anthropic — all disabled by
   default, with priorities that try local models before cloud ones.
 """
@@ -14,13 +14,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sqlalchemy import select
-
 from app.db.session import SessionLocal
 from app.models.app_setting import AppSetting
 from app.models.llm_provider import LlmProvider
 from app.models.student import Student
 from app.models.subject import Subject
+from app.services.llm.schema import (
+    DEFAULT_PARSE_SYSTEM_PROMPT,
+    DEFAULT_PARSE_USER_PROMPT,
+    PARSE_SYSTEM_PROMPT_KEY,
+    PARSE_USER_PROMPT_KEY,
+)
+from sqlalchemy import select
 
 SUBJECT_NAMES = ["Thermodynamics", "Food Science", "Crime Busters"]
 DEMO_STUDENT_NAME = "Demo Student"
@@ -48,20 +53,40 @@ def seed_demo_student(db) -> None:
 
 
 def seed_app_settings(db) -> None:
-    key = "default_exam_duration_minutes"
-    existing = db.get(AppSetting, key)
-    if existing is None:
-        db.add(
-            AppSetting(
-                key=key,
-                value="30",
-                value_type="integer",
-                description="Default exam duration (minutes) for new question papers.",
+    settings = (
+        (
+            "default_exam_duration_minutes",
+            "30",
+            "integer",
+            "Default exam duration (minutes) for new question papers.",
+        ),
+        (
+            PARSE_USER_PROMPT_KEY,
+            DEFAULT_PARSE_USER_PROMPT,
+            "string",
+            "User prompt appended to uploaded question papers during LLM parsing.",
+        ),
+        (
+            PARSE_SYSTEM_PROMPT_KEY,
+            DEFAULT_PARSE_SYSTEM_PROMPT,
+            "string",
+            "System prompt used when parsing uploaded question papers with an LLM.",
+        ),
+    )
+    for key, value, value_type, description in settings:
+        existing = db.get(AppSetting, key)
+        if existing is None:
+            db.add(
+                AppSetting(
+                    key=key,
+                    value=value,
+                    value_type=value_type,
+                    description=description,
+                )
             )
-        )
-        print(f"  + created app_setting: {key}")
-    else:
-        print(f"  = app_setting already exists: {key}")
+            print(f"  + created app_setting: {key}")
+        else:
+            print(f"  = app_setting already exists: {key}")
 
 
 LLM_PROVIDERS = [
